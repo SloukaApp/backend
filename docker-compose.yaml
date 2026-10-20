@@ -1,0 +1,44 @@
+services:
+  database:
+    image: postgres:17-bookworm
+    container_name: slouka_db
+    environment:
+      POSTGRES_USER: ${DB__USER}
+      POSTGRES_PASSWORD: ${DB__PASSWORD}
+      POSTGRES_DB: ${DB__NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./var/postgresql:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB__USER} -d ${DB__NAME}"]
+      interval: 10s
+      timeout: 1s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: slouka_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./var/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 1s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit
+    container_name: slouka_mailpit
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    volumes:
+      - ./var/mailpit:/data
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
