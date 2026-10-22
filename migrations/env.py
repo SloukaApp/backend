@@ -8,12 +8,15 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from src.core.config import DatabaseSettings
 from src.core.db import BaseModel
+from src.modules.auth import models as auth_models
+from src.modules.users import models as users_models
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+registered_models = (users_models, auth_models)
 target_metadata = BaseModel.metadata
 
 db_settings = DatabaseSettings()  # pyright: ignore[reportCallIssue]

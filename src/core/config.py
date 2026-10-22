@@ -50,10 +50,19 @@ class RedisConfig(BaseModel):
 
 class AuthConfig(BaseModel):
     jwt_secret: SecretStr
+    confirmation_ttl_seconds: int = Field(default=900, gt=0)
+    confirmation_resend_cooldown_seconds: int = Field(default=60, ge=0)
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = ACCESS_TOKEN_TTL_MINUTES
     refresh_token_ttl_days: int = REFRESH_TOKEN_TTL_DAYS
     max_active_devices: int = Field(default=MIN_ACTIVE_DEVICES, ge=MIN_ACTIVE_DEVICES)
+
+    @field_validator("jwt_algorithm")
+    @classmethod
+    def supported_algorithm(cls, value: str) -> str:
+        if value != "HS256":
+            raise ValueError("only HS256 is supported")
+        return value
 
     @field_validator("access_token_ttl_minutes")
     @classmethod
@@ -77,6 +86,9 @@ class SmtpConfig(BaseModel):
     user: str | None = None
     password: SecretStr | None = None
     use_tls: bool = False
+    start_tls: bool = False
+    timeout_seconds: float = Field(default=10.0, gt=0)
+    max_retries: int = Field(default=2, ge=0, le=5)
 
 
 class HttpClientConfig(BaseModel):
@@ -89,7 +101,7 @@ class CacheConfig(BaseModel):
 
 
 class RateLimitConfig(BaseModel):
-    login_window_seconds: int = Field(default=300, ge=1)
+    login_window_seconds: int = Field(default=900, ge=1)
     login_max_attempts: int = Field(default=10, ge=1)
 
 
