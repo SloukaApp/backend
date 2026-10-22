@@ -13,5 +13,11 @@ and are assembled in `main.py`, never imported by services or workers.
 
 ## Passwords
 
-- Hash passwords with Argon2. Never persist, return, or log plaintext passwords.
+- Passwords require at least 8 characters. Do not impose alphabet, case, digit, or special-character composition rules; special characters are allowed. Hash passwords with Argon2. Never persist, return, or log plaintext passwords.
 - Keep normalization and password handling inside this module. Database constraints enforce uniqueness; a prior lookup alone does not prevent concurrent duplicates.
+
+## Account Data
+
+- Require a valid unique email and explicit consent at registration; store consent acceptance time and text version in `users`.
+- Store email confirmation state, onboarding completion, IANA timezone and reminder settings in `users`; no separate consent/settings tables. Completing onboarding is idempotent and persists across logins.
+- Account deletion requires explicit confirmation and the current password. Remove the account's learning data and authorization immediately; delete/anonymize personal data within 30 days. Other users' independent copies remain intact.

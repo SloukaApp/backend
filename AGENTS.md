@@ -29,10 +29,14 @@ migrations/
 | --- | --- | --- |
 | `users` | User accounts, email, password hashing and verification | [users/AGENTS.md](src/modules/users/AGENTS.md) |
 | `auth` | Authentication workflows, access tokens, refresh tokens and devices | [auth/AGENTS.md](src/modules/auth/AGENTS.md) |
-| `decks` | Decks and cards, visibility, public reads and copying | [decks/AGENTS.md](src/modules/decks/AGENTS.md) |
-| `practice` | Answer acceptance, learning progress and scheduling | [practice/AGENTS.md](src/modules/practice/AGENTS.md) |
+| `decks` | Decks/cards, stored learning state, tags, visibility and copying | [decks/AGENTS.md](src/modules/decks/AGENTS.md) |
+| `practice` | Sessions, accepted answers and scheduling calculations | [practice/AGENTS.md](src/modules/practice/AGENTS.md) |
 
 Read the local rules of each module affected by a change, including cross-module workflows. Other capabilities (`stats`, `settings`, `notifications`, `exercises`) remain planned; do not create them until needed.
+
+Planned ownership: `auth` owns `devices` (installations and authorization); `notifications` owns `push_subscriptions` linked by `device_id`, plus delivery records. Push tokens, permission and push-disable state belong to the subscription, not the device. Notifications uses public auth operations to verify devices; auth does not call notifications. Disabling push never revokes authorization. Before sending, verify the account/device is still authorized.
+
+Statistics are computed from `activity_logs`; learned status and difficulty come from `cards`. Do not introduce `user_stats` or stored calendars. Activity remains a business fact, not a mutation audit.
 
 ## Module Boundaries & Public Contracts
 
@@ -93,6 +97,8 @@ async with uow:
 - Routers contain no SQL or business decisions. Services never import transport. Domain code has no I/O, session, configuration, or clock access. Services depend on external-client `Protocol` interfaces; concrete adapters are wired in composition roots.
 - Absolute imports rooted at `src`; relative cross-module imports forbidden. `core` never imports `modules` (sole exception: the ORM metadata aggregator Alembic needs). Beyond module skeletons, create only files with real content; no speculative helpers or empty packages.
 - Generate UUIDv7 in application code; never assign generated/trigger-maintained columns such as `updated_at`.
+- Store event instants in UTC using `timestamptz`; derive local dates using the user's validated IANA timezone. Keep local reminder times and delivery dates distinct from instants.
+- Store structured content in related PostgreSQL tables, not JSONB, arrays of answer options, or JSON encoded as text.
 - `numeric` columns computed in `Decimal`; never binary `float`. No N+1 aggregates.
 - Translate DB violations, never leak 500: `23505`→409, `23503` missing parent on write→404, `23503` NO ACTION blocking delete→409, `23514`→409 or 422 by meaning.
 - REST/JSON under `/api/v1`, OpenAPI at `/api/v1/openapi.json` with declared response + error schemas. Incompatible changes require a new API version.
