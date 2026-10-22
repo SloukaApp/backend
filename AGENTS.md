@@ -122,19 +122,23 @@ Example for a future auth operation (add only errors needed by real operations):
 # modules/auth/errors.py
 from src.core.errors import ApplicationError
 
+
 class LoginRateLimitedError(ApplicationError):
     def __init__(self, retry_after_seconds: int) -> None:
         self.retry_after_seconds = retry_after_seconds
         super().__init__()
 
+
 # modules/auth/http_errors.py
 from src.core.http_errors import HttpErrorResponse, map_error
 from src.modules.auth.errors import LoginRateLimitedError
+
 
 def rate_limit_response(error: LoginRateLimitedError) -> HttpErrorResponse:
     return HttpErrorResponse(
         429, "Too many requests", {"Retry-After": str(error.retry_after_seconds)}
     )
+
 
 ERROR_MAPPINGS = (map_error(LoginRateLimitedError, rate_limit_response),)
 # Static alternative: map_error(SomeError, HttpErrorResponse(409, "Conflict"))
