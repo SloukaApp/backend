@@ -1,0 +1,25 @@
+services:
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ./src:/app/src
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+  database:
+    ports:
+      - "5432:5432"
+  mailpit:
+    ports:
+      - "1025:1025"
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src

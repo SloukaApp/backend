@@ -1,4 +1,41 @@
 services:
+  migrator:
+    command: ["alembic", "upgrade", "head"]
+    networks:
+      - slouka_net
+    env_file:
+      - .env
+    environment:
+      DB__DSN: ${DB__CONTAINER_DSN:-postgresql+asyncpg://${DB__USER}:${DB__PASSWORD}@database:5432/${DB__NAME}}
+    depends_on:
+      database:
+        condition: service_healthy
+
+  backend:
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      mailpit:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DB__DSN: ${DB__CONTAINER_DSN:-postgresql+asyncpg://${DB__USER}:${DB__PASSWORD}@database:5432/${DB__NAME}}
+      SMTP__HOST: mailpit
+      SMTP__PORT: 1025
+      SMTP__USE_TLS: "false"
+      SMTP__START_TLS: "false"
+    networks:
+      - slouka_net
+    ports:
+      - 8000:8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/openapi.json', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   database:
     image: postgres:17-bookworm
     container_name: slouka_db
@@ -6,39 +43,32 @@ services:
       POSTGRES_USER: ${DB__USER}
       POSTGRES_PASSWORD: ${DB__PASSWORD}
       POSTGRES_DB: ${DB__NAME}
-    ports:
-      - "5432:5432"
+    networks:
+      - slouka_net
     volumes:
       - ./var/postgresql:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB__USER} -d ${DB__NAME}"]
-      interval: 10s
-      timeout: 1s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    container_name: slouka_redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - ./var/redis:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 1s
       retries: 5
 
   mailpit:
+    networks:
+      - slouka_net
     image: axllent/mailpit
     container_name: slouka_mailpit
-    ports:
-      - "1025:1025"
-      - "8025:8025"
     volumes:
       - ./var/mailpit:/data
+    ports:
+      - 8025:8025
     environment:
       MP_MAX_MESSAGES: 5000
       MP_DATABASE: /data/mailpit.db
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+networks:
+  slouka_net:
+    name: slouka_net
+    driver: bridge

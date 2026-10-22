@@ -1,0 +1,13 @@
+services:
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+    restart: always
