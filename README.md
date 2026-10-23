@@ -20,6 +20,8 @@ Dev и prod используют явные пары Compose-файлов. Эт�
 Создайте `.env` по `.env.template` самостоятельно. Задайте собственный случайный
 `AUTH__JWT_SECRET` (например, сгенерированный менеджером паролей), параметры PostgreSQL
 и SMTP sender. Пример секрета из шаблона непригоден для реального окружения.
+Для dev задайте `PGADMIN_DEFAULT_EMAIL` и непустой `PGADMIN_DEFAULT_PASSWORD`;
+`PGADMIN_PORT` задаёт порт веб-интерфейса (по умолчанию `5050`).
 Юридический текст согласия предоставляет приложение: backend хранит переданную
 непустую `consent_version` и время явного согласия, не создаёт юридический текст.
 
@@ -39,10 +41,16 @@ volumes и не используйте downgrade для обычного зап�
 - API и Swagger: http://localhost:8000/api/v1/docs
 - OpenAPI: http://localhost:8000/api/v1/openapi.json
 - Mailpit UI: http://localhost:8025
+- pgAdmin (только dev): http://localhost:5050, вход по `PGADMIN_DEFAULT_EMAIL`
+  и `PGADMIN_DEFAULT_PASSWORD`. Данные интерфейса сохраняются в `var/pgadmin`.
 - SMTP с хоста: `localhost:1025` (опубликован dev override).
 - PostgreSQL с хоста: `localhost:5432` (опубликован dev override).
 
 В контейнерах PostgreSQL доступен как `database:5432`, SMTP как `mailpit:1025`.
+В pgAdmin добавьте сервер с host `database`, port `5432`, maintenance database
+из `DB__NAME`, username из `DB__USER` и password из `DB__PASSWORD`.
+pgAdmin доступен только через loopback; учётная запись создаётся при первом запуске,
+последующее изменение переменных не меняет пароль уже созданной записи.
 Compose переопределяет локальный DB DSN и SMTP host; Mailpit работает без TLS и
 STARTTLS. Если логин/пароль БД содержит URL-спецсимволы, задайте дополнительно
 `DB__CONTAINER_DSN` с URL-encoded credentials и адресом `database:5432` в своём
