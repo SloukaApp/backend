@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -24,15 +25,21 @@ from src.modules.auth.errors import (
 )
 from src.modules.auth.models import Device, EmailConfirmation, RefreshToken
 from src.modules.users.dto import CreateUserInput, UserState
-from src.modules.users.errors import UserNotFoundError
+from src.modules.users.errors import InvalidCredentialsError, UserNotFoundError
 from src.modules.users.service import UsersService
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
     """Own auth workflows; dependency direction is auth → users. Shared operation UoW."""
 
     def __init__(
-        self, uow: UnitOfWork, users: UsersService, config: AuthConfig, mailer: ConfirmationMailer
+        self,
+        uow: UnitOfWork,
+        users: UsersService,
+        config: AuthConfig,
+        mailer: ConfirmationMailer,
     ) -> None:
         self.uow = uow
         self.users = users
@@ -52,10 +59,14 @@ class AuthService:
             raise InvalidAccessError() from exc
 
     async def login(self, email: str, password: str, installation_id: UUID) -> TokenPair:
-        """Raise InvalidCredentialsError, EmailUnconfirmedError, DeviceLimitError."""
-        account = await self.users.verify_credentials(email, password)
-        account = await self.users.get_account(account.id, for_update=True)
-        account = await self.users.verify_credentials(email, password)
+        """Raise InvalidCredentialsError, EmailUnconfirmedError, or DeviceLimitError."""
+        try:
+            account = await self.users.verify_credentials(email, password)
+            account = await self.users.get_account(account.id, for_update=True)
+            account = await self.users.verify_credentials(email, password)
+        except InvalidCredentialsError:
+            logger.warning("Login credentials rejected")
+            raise
         if not account.email_confirmed:
             raise EmailUnconfirmedError()
         return await self._authorize(account.id, installation_id, datetime.now(UTC))
@@ -203,17 +214,16 @@ class AuthService:
         """Call only outside a transaction; raise MailDeliveryError after persisted registration."""
         await self.mailer.send_confirmation(delivery.email, delivery.token)
 
-    async def confirm_email(self, raw: str, installation_id: UUID) -> TokenPair:
+    async def confirm_email(self, email: str, raw: str, installation_id: UUID) -> TokenPair:
         """Raise InvalidConfirmationError or DeviceLimitError; all changes atomic."""
         digest = token_hash(raw)
-        owner = await repository.confirmation_owner(self.uow.session, digest)
-        if owner is None:
-            raise InvalidConfirmationError()
         try:
+            account = await self.users.get_account_by_email(email)
+            owner = account.id
             await self.users.get_account(owner, for_update=True)
         except UserNotFoundError as exc:
             raise InvalidConfirmationError() from exc
-        confirmation = await repository.get_confirmation(self.uow.session, digest)
+        confirmation = await repository.get_confirmation(self.uow.session, owner, digest)
         now = datetime.now(UTC)
         if (
             confirmation is None

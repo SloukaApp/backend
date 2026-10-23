@@ -48,6 +48,13 @@ class UsersService:
             raise InvalidCredentialsError
         return self._state(user)
 
+    async def get_account_by_email(self, email: str) -> UserState:
+        """Raise UserNotFoundError for an absent normalized email."""
+        user = await repository.find_by_email(self.uow.session, normalize_email(email))
+        if user is None:
+            raise UserNotFoundError()
+        return self._state(user)
+
     async def get_account(self, user_id: UUID, *, for_update: bool = False) -> UserState:
         """Raise UserNotFoundError; for_update locks the stable account row."""
         return self._state(await self._get(user_id, for_update=for_update))

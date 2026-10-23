@@ -3,10 +3,14 @@ from typing import Annotated, cast
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from src.core.dependencies import SettingsDep, UoWDep
+from src.core.dependencies import RedisDep, SettingsDep, UoWDep
+from src.core.errors import RateLimitUnavailableError
+from src.core.rate_limit import RateLimiter
 from src.modules.auth.adapters import ConfirmationMailer
 from src.modules.auth.dto import Principal
 from src.modules.auth.errors import EmailUnconfirmedError, InvalidAccessError
+from src.modules.auth.rate_limit import AuthRateLimits
+from src.modules.auth.schemas import ConfirmationRequest, LoginRequest
 from src.modules.auth.service import AuthService
 from src.modules.users.dependencies import UsersServiceDep
 from src.modules.users.dto import UserState
@@ -14,8 +18,37 @@ from src.modules.users.dto import UserState
 bearer = HTTPBearer(auto_error=False)
 
 
+def get_rate_limits(redis: RedisDep, settings: SettingsDep) -> AuthRateLimits:
+    return AuthRateLimits(RateLimiter(redis, settings.redis.key_prefix), settings.rate_limit)
+
+
+RateLimitsDep = Annotated[AuthRateLimits, Depends(get_rate_limits)]
+
+
+def get_client_ip(request: Request) -> str:
+    if request.client is None:
+        raise RateLimitUnavailableError()
+    return request.client.host
+
+
+ClientIPDep = Annotated[str, Depends(get_client_ip)]
+
+
+async def check_confirmation(
+    data: ConfirmationRequest, ip: ClientIPDep, limits: RateLimitsDep
+) -> None:
+    await limits.confirmation(data.email, ip)
+
+
+async def check_login(data: LoginRequest, ip: ClientIPDep, limits: RateLimitsDep) -> None:
+    await limits.login(data.email, ip)
+
+
 def get_auth_service(
-    uow: UoWDep, users: UsersServiceDep, settings: SettingsDep, request: Request
+    uow: UoWDep,
+    users: UsersServiceDep,
+    settings: SettingsDep,
+    request: Request,
 ) -> AuthService:
     mailer = cast(ConfirmationMailer, request.app.state.confirmation_mailer)
     return AuthService(uow, users, settings.auth, mailer)

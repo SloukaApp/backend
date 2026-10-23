@@ -1,11 +1,16 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Depends, Query, Response
 
 from src.core.dependencies import UoWDep
 from src.core.schemas import ErrorResponse
-from src.modules.auth.dependencies import AuthServiceDep, PrincipalDep
+from src.modules.auth.dependencies import (
+    AuthServiceDep,
+    PrincipalDep,
+    check_confirmation,
+    check_login,
+)
 from src.modules.auth.schemas import (
     ConfirmationRequest,
     CredentialsRequest,
@@ -53,19 +58,21 @@ async def resend(
 
 @router.post(
     "/confirm-email",
+    dependencies=[Depends(check_confirmation)],
     response_model=TokenResponse,
-    responses={code: {"model": ErrorResponse} for code in (401, 409, 422)},
+    responses={code: {"model": ErrorResponse} for code in (401, 409, 422, 429, 503)},
 )
 async def confirm(data: ConfirmationRequest, uow: UoWDep, service: AuthServiceDep) -> TokenResponse:
     async with uow:
-        result = await service.confirm_email(data.token, data.installation_id)
+        result = await service.confirm_email(data.email, data.token, data.installation_id)
         return TokenResponse(**result.model_dump())
 
 
 @router.post(
     "/login",
+    dependencies=[Depends(check_login)],
     response_model=TokenResponse,
-    responses={code: {"model": ErrorResponse} for code in (401, 403, 409, 422)},
+    responses={code: {"model": ErrorResponse} for code in (401, 403, 409, 422, 429, 503)},
 )
 async def login(data: LoginRequest, uow: UoWDep, service: AuthServiceDep) -> TokenResponse:
     async with uow:

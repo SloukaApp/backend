@@ -15,9 +15,13 @@ async def add_confirmation(session: AsyncSession, confirmation: EmailConfirmatio
     await flush(session)
 
 
-async def get_confirmation(session: AsyncSession, digest: str) -> EmailConfirmation | None:
+async def get_confirmation(
+    session: AsyncSession, user_id: UUID, digest: str
+) -> EmailConfirmation | None:
     return await session.scalar(
-        select(EmailConfirmation).where(EmailConfirmation.token_hash == digest).with_for_update()
+        select(EmailConfirmation)
+        .where(EmailConfirmation.user_id == user_id, EmailConfirmation.token_hash == digest)
+        .with_for_update()
     )
 
 
@@ -176,9 +180,3 @@ async def list_devices(
         or 0
     )
     return [(row[0], bool(row[1])) for row in result], total
-
-
-async def confirmation_owner(session: AsyncSession, digest: str) -> UUID | None:
-    return await session.scalar(
-        select(EmailConfirmation.user_id).where(EmailConfirmation.token_hash == digest)
-    )

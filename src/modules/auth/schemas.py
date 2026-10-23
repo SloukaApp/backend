@@ -31,6 +31,7 @@ class LoginRequest(CredentialsRequest):
 
 
 class ConfirmationRequest(BaseModel):
+    email: Email
     token: str = Field(min_length=6, max_length=6, pattern=r"^[A-Za-z0-9]{6}$", repr=False)
     installation_id: UUID
 

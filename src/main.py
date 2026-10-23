@@ -3,10 +3,12 @@ from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from src.core.config import API_V1_PREFIX, get_settings
 from src.core.db import build_engine, build_session_factory
 from src.core.errors import ApplicationError
+from src.core.http_errors import ERROR_MAPPINGS as CORE_ERROR_MAPPINGS
 from src.core.http_errors import build_application_error_handler
 from src.core.logging import RequestIdMiddleware, setup_logging
 from src.core.redis import build_redis
@@ -56,7 +58,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(RequestIdMiddleware)
-    error_handler = build_application_error_handler(*USERS_ERROR_MAPPINGS, *AUTH_ERROR_MAPPINGS)
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.app.trusted_proxies)
+    error_handler = build_application_error_handler(
+        *CORE_ERROR_MAPPINGS, *USERS_ERROR_MAPPINGS, *AUTH_ERROR_MAPPINGS
+    )
     app.add_exception_handler(ApplicationError, error_handler)
     app.add_exception_handler(Exception, error_handler)
 

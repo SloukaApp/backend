@@ -21,7 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-CMD ["python", "-m", "uvicorn", "src.main:create_app", "--factory", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "src.main:create_app", "--factory", "--no-proxy-headers", "--reload", "--host", "0.0.0.0", "--port", "8000"]
 
 FROM builder-base AS builder-prod
 
@@ -54,4 +54,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 USER nonroot
 
-CMD ["python", "-m", "uvicorn", "src.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "src.main:create_app", "--factory", "--no-proxy-headers", "--host", "0.0.0.0", "--port", "8000"]

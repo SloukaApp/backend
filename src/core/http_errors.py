@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from src.core.errors import ApplicationError
+from src.core.errors import ApplicationError, RateLimitExceededError, RateLimitUnavailableError
 
 logger = logging.getLogger(__name__)
 
@@ -69,3 +69,15 @@ def build_application_error_handler(
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
     return handler
+
+
+def rate_limit_response(error: RateLimitExceededError) -> HttpErrorResponse:
+    return HttpErrorResponse(
+        429, "Too many requests", {"Retry-After": str(error.retry_after_seconds)}
+    )
+
+
+ERROR_MAPPINGS = (
+    map_error(RateLimitExceededError, rate_limit_response),
+    map_error(RateLimitUnavailableError, HttpErrorResponse(503, "Rate limit service unavailable")),
+)

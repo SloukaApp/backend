@@ -17,10 +17,13 @@ services:
         condition: service_completed_successfully
       mailpit:
         condition: service_started
+      redis:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       DB__DSN: ${DB__CONTAINER_DSN:-postgresql+asyncpg://${DB__USER}:${DB__PASSWORD}@database:5432/${DB__NAME}}
+      REDIS__DSN: ${REDIS__CONTAINER_DSN:-redis://redis:6379/0}
       SMTP__HOST: mailpit
       SMTP__PORT: 1025
       SMTP__USE_TLS: "false"
@@ -35,6 +38,19 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  redis:
+    image: redis:7.4-bookworm
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    networks:
+      - slouka_net
+    volumes:
+      - ./var/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   database:
     image: postgres:17-bookworm

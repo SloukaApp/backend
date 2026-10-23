@@ -103,6 +103,12 @@ class CacheConfig(BaseModel):
 class RateLimitConfig(BaseModel):
     login_window_seconds: int = Field(default=900, ge=1)
     login_max_attempts: int = Field(default=10, ge=1)
+    login_ip_window_seconds: int = Field(default=60, ge=1)
+    login_ip_max_attempts: int = Field(default=60, ge=1)
+    confirmation_email_window_seconds: int = Field(default=900, ge=1)
+    confirmation_email_max_attempts: int = Field(default=5, ge=1)
+    confirmation_ip_window_seconds: int = Field(default=900, ge=1)
+    confirmation_ip_max_attempts: int = Field(default=20, ge=1)
 
 
 class LoggingConfig(BaseModel):
