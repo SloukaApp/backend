@@ -1,213 +1,180 @@
 # Slouka backend
 
 Python 3.14, FastAPI, PostgreSQL 17. Работать из `backend/`; импорты начинаются с `src`.
+Шаблоны окружений в корне: `.env.template` для разработки и `.env.prod.template`
+для production.
 
-## Команды Make
+## Разработка
 
-`make` показывает доступные команды. `make dev-up` / `make prod-up` собирают
-образы и запускают окружение в фоне; `make dev-stop` / `make prod-stop`
-останавливают контейнеры. `make dev-down` / `make prod-down` также удаляют
-контейнеры и сеть, сохраняя данные в `var/`. Дополнительно доступны команды
-`dev-build`, `dev-logs`, `dev-ps`, `dev-config` и их варианты с префиксом `prod-`.
-
-Dev и prod используют явные пары Compose-файлов. Это альтернативные режимы
-одного стека: имена инфраструктурных контейнеров, сеть и данные общие, поэтому
-перед переключением выполните `make dev-down` или `make prod-down` для текущего
-режима. Команды `*-up` запускают migrator и применяют миграции.
-
-## Первый запуск
-
-Создайте `.env` по `.env.template` самостоятельно. Задайте собственный случайный
-`AUTH__JWT_SECRET` (например, сгенерированный менеджером паролей), параметры PostgreSQL
-и SMTP sender. Пример секрета из шаблона непригоден для реального окружения.
-Для dev задайте `PGADMIN_DEFAULT_EMAIL` и непустой `PGADMIN_DEFAULT_PASSWORD`;
-`PGADMIN_PORT` задаёт порт веб-интерфейса (по умолчанию `5050`).
-Юридический текст согласия предоставляет приложение: backend хранит переданную
-непустую `consent_version` и время явного согласия, не создаёт юридический текст.
+Создайте `.env` из `.env.template`; задайте пароль БД, соответствующий `DB__DSN`,
+случайный `AUTH__JWT_SECRET` и непустой пароль pgAdmin. Секреты не коммитить.
+Команды выполняются из `backend/`:
 
 ```bash
 uv sync
-docker compose config --quiet
-docker compose build backend migrator
-docker compose up -d
+make config
+make up
 ```
 
-Сервис приложения называется `backend`. Dev override подключается автоматически.
-`database` должен стать healthy, затем `migrator` выполняет `alembic upgrade head`,
-и только после его успешного завершения запускается API. На существующей/общей БД
-сначала согласуйте применение миграций; `up` применяет их автоматически. Не удаляйте
-volumes и не используйте downgrade для обычного запуска.
+База и Redis проходят healthcheck, migrator применяет `alembic upgrade head`,
+затем запускается backend с reload. Применение миграций на общей/существующей БД
+сначала согласуйте. `make stop` останавливает сервисы, `make down` удаляет
+контейнеры/сеть, сохраняя `var/`; `make build`, `make logs`, `make ps` доступны отдельно.
+Базовый `docker-compose.yaml` общий; `docker-compose.override.yaml` добавляет
+Mailpit, pgAdmin, локальную сборку target `dev`, исходники и порты. `make up`
+использует оба файла явно. Dev/prod запускать на разных
+машинах/каталогах данных; это один Compose-проект в каждом окружении.
 
-- API и Swagger: http://localhost:8000/api/v1/docs
-- OpenAPI: http://localhost:8000/api/v1/openapi.json
-- Mailpit UI: http://localhost:8025
-- pgAdmin (только dev): http://localhost:5050, вход по `PGADMIN_DEFAULT_EMAIL`
-  и `PGADMIN_DEFAULT_PASSWORD`. Данные интерфейса сохраняются в `var/pgadmin`.
-- SMTP с хоста: `localhost:1025` (опубликован dev override).
-- PostgreSQL с хоста: `localhost:5432` (опубликован dev override).
+- API: http://localhost:8000/api/v1/docs
+- Mailpit: http://localhost:8025, SMTP с хоста: localhost:1025
+- pgAdmin: http://localhost:5050; PostgreSQL с хоста: localhost:5432
 
-В контейнерах PostgreSQL доступен как `database:5432`, SMTP как `mailpit:1025`.
-В pgAdmin добавьте сервер с host `database`, port `5432`, maintenance database
-из `DB__NAME`, username из `DB__USER` и password из `DB__PASSWORD`.
-pgAdmin доступен только через loopback; учётная запись создаётся при первом запуске,
-последующее изменение переменных не меняет пароль уже созданной записи.
-Compose переопределяет локальный DB DSN и SMTP host; Mailpit работает без TLS и
-STARTTLS. Если логин/пароль БД содержит URL-спецсимволы, задайте дополнительно
-`DB__CONTAINER_DSN` с URL-encoded credentials и адресом `database:5432` в своём
-окружении. Не публикуйте этот DSN и не выводите разрешённую конфигурацию Compose.
+Опубликованные dev-порты привязаны к loopback. В pgAdmin сервер — `database:5432`,
+база/пользователь/пароль из DB__NAME/DB__USER/DB__PASSWORD. Изменение env не меняет
+пароль уже созданной учётной записи pgAdmin. Данные находятся в `var/pgadmin`.
+В Compose DB DSN и Redis DSN заменяются на контейнерные; SMTP dev направлен на
+`mailpit:1025`, без TLS. Для URL-спецсимволов в credentials задайте
+DB__CONTAINER_DSN с percent-encoding. Не выводите разрешённую конфигурацию с секретами.
 
-Для локального API оставьте в `.env` адреса БД и SMTP `localhost`, поднимите только
-инфраструктуру и осознанно примените миграции:
+Для API вне Docker сначала поднимите инфраструктуру, затем примените миграции:
 
 ```bash
-docker compose up -d --no-deps database mailpit
+docker compose up -d --no-deps database redis mailpit
 uv run alembic upgrade head
 uv run uvicorn src.main:create_app --factory --no-proxy-headers --reload --host 127.0.0.1 --port 8000
 ```
 
-Для production используйте явную пару файлов, без автоматического dev override:
+В этом режиме DB/SMTP используют localhost из `.env`; Redis по умолчанию не
+публикуется. Для запуска API на хосте добавьте **локальный** Compose override с
+`redis.ports: ["127.0.0.1:6379:6379"]` и поднимите его явно либо используйте
+отдельный локальный Redis по REDIS__DSN. Login/confirm-email требуют Redis.
+Юридический текст согласия предоставляет клиент; backend сохраняет переданные
+consent_version и время согласия.
+
+## Production
+
+Используются `docker-compose.yaml` и `docker-compose.prod.yaml`, проект `slouka`.
+Backend и migrator скачивают один готовый образ из GHCR по digest; сборки на VPS
+нет. PostgreSQL, Redis, Traefik, Stalwart и Roundcube используют теги конкретных
+версий без digest. Dev override, Mailpit, pgAdmin и Makefile на сервере не нужны.
+
+### Подготовка сервера
+
+- Linux VPS `amd64` с Docker Engine, Compose plugin с поддержкой `--wait` и curl.
+  SSH-пользователю нужны вход по паролю, доступ к Docker и каталогу `/opt/slouka`.
+- В `/opt/slouka` разместить оба Compose-файла и папку `deploy/`. Создать каталоги
+  из таблицы данных ниже с правами записи для соответствующих контейнеров.
+  Конфиги и инфраструктура обновляются вручную;
+  автодеплой их не передаёт.
+- Создать `/opt/slouka/production.env` по `.env.prod.template`, права
+  `0600`. Заполнить `BACKEND_IMAGE` опубликованным digest, параметры БД и `DB__DSN`,
+  JWT secret, `ACME_EMAIL`, пароль ящика noreply и постоянный 24-символьный ключ
+  `ROUNDCUBEMAIL_DES_KEY`. Оставить `APP_ENV_FILE=./production.env` из шаблона:
+  он указывает backend и migrator, какой файл окружения загружать.
+  Настоящий env хранится только на сервере.
+- Если GHCR package приватный, выполнить `docker login ghcr.io` под пользователем
+  деплоя с токеном, имеющим право чтения пакета.
+- Настроить DNS для `api.slouka.csmmark.me`, `mail.slouka.csmmark.me` и
+  `webmail.slouka.csmmark.me` на VPS. Открыть SSH и TCP 80/443, для почты — 25/465/993.
+  Внешний API доступен через Traefik на HTTPS, БД и Redis публично не открываются.
+- При первом запуске Stalwart пройти мастер через SSH-туннель к локальному 8080
+  (`ssh -L 8080:127.0.0.1:8080 USER@VPS`, адрес `http://127.0.0.1:8080/admin`).
+  Stalwart сам создаёт `config.json` в `var/stalwart/etc`; отдельного шаблона
+  хранилища в `deploy/` нет, используются стандартные настройки RocksDB.
+  Настроить домен `slouka.csmmark.me`, постоянного администратора, ящик
+  `noreply@slouka.csmmark.me` с паролем из env, TLS для SMTP/IMAP и почтовые DNS
+  записи MX, SPF, DKIM, DMARC и PTR. Для почтового ACME использовать HTTP-01 через
+  существующий маршрут Traefik; публичный 443 уже занят Traefik.
+  Compose не создаёт почтовые аккаунты и не настраивает почтовый ACME.
+
+Начальный запуск инфраструктуры из `/opt/slouka` после заполнения env:
 
 ```bash
-docker compose -f docker-compose.yaml -f docker-compose.prod.yaml config --quiet
-docker compose -f docker-compose.yaml -f docker-compose.prod.yaml build backend migrator
-docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
+docker compose --project-name slouka --env-file production.env \
+  -f docker-compose.yaml -f docker-compose.prod.yaml config --quiet
+docker compose --project-name slouka --env-file production.env \
+  -f docker-compose.yaml -f docker-compose.prod.yaml \
+  up -d --no-deps database redis traefik stalwart roundcube
 ```
 
-Перед внешним размещением настройте HTTPS и подходящий SMTP. Текущий Compose
-использует Mailpit для разработки; production override сам по себе не заменяет
-почтовую инфраструктуру. SMTP имеет timeout 10 секунд и максимум 2 повтора;
-`SMTP__USE_TLS` и `SMTP__START_TLS` задаются явно. Подключения закрываются после
-каждой попытки, общий адаптер управляется lifespan.
+Перед первым деплоем дождаться healthy PostgreSQL/Redis и закончить настройку
+почты. Все постоянные данные находятся в `var/` на сервере:
 
-Redis отсутствует в Compose и для users/auth не требуется. Существующий клиент
-Redis ленивый, lifespan не выполняет ping. Для будущих возможностей и отдельного
-Taskiq worker понадобится отдельно доступный Redis. Ограничение попыток входа
-**ещё не реализовано**: сохранены только настройки, окно унифицировано на 900 секунд.
+| Сервис | Каталог относительно `/opt/slouka` |
+| --- | --- |
+| PostgreSQL | `var/postgresql` |
+| Redis | `var/redis` |
+| Traefik (ACME) | `var/traefik/acme` |
+| Stalwart (настройки и данные) | `var/stalwart/etc`, `var/stalwart/data` |
+| Roundcube | `var/roundcube/db` |
 
-## HTTP сценарии
+Используются bind mounts: данные доступны напрямую в `/opt/slouka/var/`,
+каталог игнорируется Git. Named volumes не используются.
 
-Все пути ниже относительно `/api/v1`, тела и ответы — JSON. `installation_id` —
-стабильный UUID установки мобильного приложения, не секрет и не доказательство
-авторизации. Сохраняйте его на устройстве. Для защищённых маршрутов передавайте
-`Authorization: Bearer <access_token>`.
+### Конфиги и сертификаты
 
-1. `POST /auth/register`: `email`, `password` (минимум 8 символов),
-   `consent: true`, `consent_version`. Создаёт неподтверждённую запись и возвращает
-   201 после отправки письма; access/refresh и confirmation token в ответ не входят.
-2. Прочитайте токен из письма в Mailpit. Письмо содержит токен, без ссылки;
-   мобильный клиент вызывает `POST /auth/confirm-email` с `email`, `token` и
-   `installation_id`. Ответ содержит `access_token`, `refresh_token`,
-   `token_type: bearer`, `expires_in: 1800`. GET-подтверждения нет.
-3. Для последующих входов: `POST /auth/login` с `email`, `password`,
-   `installation_id`. Неподтверждённый email даёт 403.
-4. `POST /auth/refresh` требует только `refresh_token`. Сохраните новую пару:
-   предыдущий refresh одноразовый, повторное использование даёт 401 и не
-   отзывает другие устройства.
-5. `GET /auth/devices?limit=50&offset=0` возвращает `{items,total,limit,offset}`;
-   записи содержат `active`, включая исторические неактивные установки.
-   `DELETE /auth/devices/{device_id}` отзывает свою установку; чужая/отсутствующая — 404.
-6. `POST /auth/logout` отзывает refresh устройства из access JWT;
-   `POST /auth/logout-everywhere` отзывает все refresh аккаунта.
-7. `POST /auth/password`: `current_password`, `new_password`; меняет пароль и
-   отзывает все refresh в одной транзакции, новые токены не выдаёт.
-8. `GET /users/me`, `PATCH /users/me` (`timezone`, `reminders_enabled`,
-   `reminder_time`), `POST /users/me/onboarding`. Onboarding идемпотентен.
-   Timezone — IANA; reminder_time — локальное время без offset. Для включения
-   напоминаний нужны timezone и время; само расписание доставки в этот этап не входит.
-   PATCH применяет только переданные поля; email через профиль не меняется.
+Файлы `deploy/` хранятся в Git и подключаются в контейнеры только для чтения:
 
-Подтверждение действует 15 минут. Код состоит из 6 криптографически случайных
-символов `A–Z`, `a–z`, `0–9`; регистр значим. `POST /auth/confirmations/resend` с `email` и
-`password` разрешён не чаще раза в 60 секунд и аннулирует предыдущий токен.
-Дополнительный лимит resend не введён. Повторная регистрация того же email — 409;
-для неподтверждённой записи используйте resend. Если SMTP недоступен, ответ 503
-явно сообщает об ошибке доставки: аккаунт/подтверждение уже сохранены. После
-cooldown используйте resend, не новую регистрацию. SMTP-повторы не гарантируют
-exactly-once доставку; пригоден только последний действующий токен.
+| Файл | Назначение |
+| --- | --- |
+| `deploy/traefik/routes.yaml` | Маршруты API, веб-почты и HTTP-01 проверки Stalwart |
+| `deploy/roundcube/production.php` | HTTPS за прокси, доверие Traefik, проверка сертификатов IMAP/SMTP |
+| `deploy/roundcube/resources.conf` | Ограничение числа процессов Apache |
+| `deploy/roundcube/resources.ini` | Лимит памяти PHP-запроса 64 МБ |
 
-Access JWT HS256 живёт 30 минут, refresh — 30 дней; иные TTL отвергаются настройками.
-Лимит активных устройств берётся из настроек, минимум 5. Повторный вход той же
-установки заменяет её refresh. При превышении лимита — 409 без вытеснения.
-Logout/смена пароля не аннулируют уже выданные access JWT: они действуют до exp
-при обязательной проверке существования аккаунта на каждом защищённом запросе.
-Удаление аккаунта и восстановление забытого пароля не реализованы.
+Параметры подключения Roundcube к почте и `ROUNDCUBEMAIL_DES_KEY` передаются
+через `environment` в Compose; PHP-конфиг переменные окружения не читает.
 
-## Архитектура и проверка
+Для API и веб-почты сертификаты Let's Encrypt получает и продлевает Traefik
+через TLS-ALPN-01 на порту 443; состояние хранится в `var/traefik/acme`.
+Сертификат `mail.slouka.csmmark.me` для SMTP/IMAP получает и продлевает Stalwart
+после ручной настройки ACME HTTP-01. Traefik передаёт ему только запросы
+`/.well-known/acme-challenge/` на порту 80. Сертификаты Stalwart сохраняются
+в его хранилище в `var/stalwart/data`; сертификаты Traefik в Stalwart не копируются.
 
-`auth → users`: AuthService владеет регистрацией, подтверждением, входом, сменой
-пароля и отзывом авторизаций; UsersService владеет аккаунтом и паролями. У модулей
-общий operation-scoped UoW. Блокировка строки аккаунта через публичный UsersService
-сериализует выдачу устройств, refresh, resend и смену пароля, включая первый вход.
-UUIDv7 генерируется Python-default полей ORM при INSERT. Роутеры users и auth —
-обычные APIRouter; users подключает auth dependency на HTTP-уровне, сервисы
-сохраняют направление зависимости `auth → users`.
-Refresh и подтверждения дополнительно блокируются `FOR UPDATE`; в БД только их
-SHA-256 хеши. Пароли — Argon2. Уникальности и частичные индексы обеспечиваются БД.
+### GitHub Actions и деплой
 
-Роутеры управляют транзакциями; проверка access dependency завершается отдельной
-последовательной стадией перед контекстом endpoint. Права/аккаунт проверяются
-повторно в операции. SMTP выполняется после commit, вне транзакции. ORM users не
-доступен auth. Миграция `20261022_01` создаёт users/devices/refresh_tokens/
-email_confirmations; mappings явно зарегистрированы в Alembic env.
+В GitHub создать environment `production`. Настройки:
+
+| Где | Имя | Значение |
+| --- | --- | --- |
+| Repository variable | `DEPLOY_ENABLED` | `true` после подготовки сервера; до этого деплой пропускается |
+| Environment variable | `PROD_SSH_HOST` | IP или DNS-имя VPS |
+| Environment variable | `PROD_SSH_USER` | SSH-пользователь с доступом к Docker |
+| Environment variable | `PROD_SSH_PORT` | SSH-порт, по умолчанию 22 |
+| Environment secret | `PROD_SSH_PASSWORD` | Пароль SSH-пользователя |
+
+Actions должны иметь право публикации GHCR package. Для публикации workflow
+использует встроенный `GITHUB_TOKEN` с `packages: write`.
+
+PR в `main` запускает `Checks`: Ruff, проверку форматирования, Mypy и pytest.
+Push в `main` или ручной запуск workflow на `main` после проверок собирает target
+`prod` и публикует `ghcr.io/sloukaapp/backend:<SHA коммита>`. При включённом
+`DEPLOY_ENABLED` следующая джоба подключается через `appleboy/ssh-action` по паролю
+и передаёт точную ссылку на образ по digest.
+
+На сервере последовательно выполняются скачивание образа, одноразовый migrator
+(`alembic upgrade head`) и обновление только backend с ожиданием healthcheck.
+Затем проверяется HTTPS OpenAPI. Ошибка останавливает деплой; автоматического
+отката нет. Инфраструктура не пересоздаётся, архивы и каталоги релизов не используются.
+Значение `BACKEND_IMAGE` в `production.env` пайплайн не переписывает: при ручных
+командах указывайте нужный образ самостоятельно.
+
+## API и правила модулей
+
+Контракты запросов, ответов и ошибок доступны в [Swagger](http://localhost:8000/api/v1/docs)
+и [OpenAPI](http://localhost:8000/api/v1/openapi.json).
+Правила разработки: [общие](AGENTS.md), [auth](src/modules/auth/AGENTS.md),
+[users](src/modules/users/AGENTS.md), [decks](src/modules/decks/AGENTS.md),
+[practice](src/modules/practice/AGENTS.md).
+
+## Проверки
 
 ```bash
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy --strict src
+uv run pytest
 ```
 
-Тесты и проверочный цикл миграций на этом этапе не запускаются по согласованному
-объёму. Для диагностики запуска используйте `docker compose ps`; не публикуйте
-секреты, токены, тела писем или персональные данные из логов/API.
-
-## Rate limiting
-
-Проверки подключены через FastAPI Depends, без rate-limit middleware.
-Sliding window counter использует оценку `current + previous * (1 - elapsed / window)`:
-это приблизительный бюджет, а не гарантия N попыток за любой скользящий интервал.
-См. [описание алгоритма Redis](https://redis.io/tutorials/howtos/ratelimiting/#3-sliding-window-counter).
-
-| Операция | Субъект | Предел | Окно | Учёт |
-| --- | --- | --- | --- | --- |
-| confirm-email | нормализованный введённый email | 5 | 900 с | все допущенные проверки |
-| confirm-email | IP | 20 | 900 с | все допущенные проверки |
-| login | IP | 60 | 60 с | все допущенные проверки |
-| login | аккаунт–IP | 10 | 900 с | все допущенные проверки |
-
-Оба бюджета каждой операции проверяются и расходуются вместе атомарно в Lua
-через Depends до открытия транзакции БД. Сервис auth не участвует в rate limiting.
-Несуществующий email тоже расходует бюджет подтверждения. Resend его не сбрасывает.
-Код проверяется только для введённого email; отсутствующий аккаунт, чужой,
-неверный, использованный, отозванный или истёкший код дают одинаковый 401.
-Субъект бюджета login — нормализованный введённый email в паре с IP;
-несуществующий аккаунт тоже расходует оба бюджета и получает 401.
-Успешные входы расходуют оба бюджета и не сбрасывают их.
-Исчерпание любого бюджета блокирует и правильный пароль до следующего допуска.
-Refresh бюджеты login не расходует. Общих лимитов auth/users нет;
-дополнительных бюджетов регистрации и resend нет.
-
-429 возвращает ErrorResponse и целочисленный Retry-After (округление вверх,
-минимум 1 с), рассчитанный по спаду оценки обоих интервалов, включая переход
-границы окна. Другие запросы могут потратить бюджет за время ожидания.
-Отказ по любому бюджету не увеличивает ни один счётчик операции
-и не продлевает их TTL.
-Сбой Redis даёт 503 на login/confirm-email; остальные операции не проверяют Redis.
-Состояние счётчиков не откатывается с транзакцией PostgreSQL.
-
-Источник времени — Redis TIME внутри Lua. Один hash на бюджет хранит номер
-интервала, текущий и предыдущий счётчики; TTL — два окна после последнего
-увеличения. Все ключи имеют общий hash tag `{rate_limit}` для атомарной проверки
-двух бюджетов в Redis Cluster. Используется REDIS__KEY_PREFIX.
-По согласованному решению ключи содержат открытые нормализованные email и IP;
-отдельного HMAC-секрета нет. Пароли и коды в ключи и логи не попадают.
-
-Compose запускает Redis 7.4, AOF everysec, named volume redis_data, без порта
-на хосте; backend использует redis://redis:6379/0. При рестарте AOF восстанавливает
-бюджеты, но последние записи могут потеряться. Для backend вне Compose нужен
-отдельно доступный Redis по REDIS__DSN.
-
-IP берётся из request.client после единственного ProxyHeadersMiddleware Uvicorn
-в приложении ([исходный код Uvicorn](https://github.com/encode/uvicorn/blob/main/uvicorn/middleware/proxy_headers.py)). Доверенные прокси задаёт APP__TRUSTED_PROXIES (по умолчанию []);
-Docker и приведённая команда запуска отключают внешнюю обработку заголовков
-через --no-proxy-headers. При другом запуске сохраняйте этот параметр, чтобы
-не включить дополнительный слой доверия forwarded-заголовкам.
+В CI отсутствие собранных тестов пока допускается с предупреждением.
