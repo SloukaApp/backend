@@ -103,6 +103,7 @@ jobs:
     environment: production
     permissions:
       contents: read
+      packages: read
     concurrency:
       group: slouka-production-deploy
       cancel-in-progress: false
@@ -111,17 +112,24 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           BACKEND_IMAGE: ${{ needs.publish.outputs.image }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ vars.PROD_SSH_HOST }}
           username: ${{ vars.PROD_SSH_USER }}
           port: ${{ vars.PROD_SSH_PORT || '22' }}
           password: ${{ secrets.PROD_SSH_PASSWORD }}
-          envs: BACKEND_IMAGE
+          envs: BACKEND_IMAGE,GHCR_USER,GHCR_TOKEN
           command_timeout: 20m
           script: |
             set -e
             cd /opt/slouka
             export BACKEND_IMAGE APP_ENV_FILE=/opt/slouka/production.env
+            DOCKER_CONFIG=$(mktemp -d)
+            export DOCKER_CONFIG
+            trap 'rm -rf -- "$DOCKER_CONFIG"' EXIT
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
+            unset GHCR_TOKEN
             compose() {
               docker compose --project-name slouka --env-file production.env \
                 -f docker-compose.yaml -f docker-compose.prod.yaml "$@"

@@ -72,8 +72,9 @@ Backend и migrator скачивают один готовый образ из G
   `ROUNDCUBEMAIL_DES_KEY`. Оставить `APP_ENV_FILE=./production.env` из шаблона:
   он указывает backend и migrator, какой файл окружения загружать.
   Настоящий env хранится только на сервере.
-- Если GHCR package приватный, выполнить `docker login ghcr.io` под пользователем
-  деплоя с токеном, имеющим право чтения пакета.
+- Приватный GHCR-образ при автодеплое скачивается с временным `GITHUB_TOKEN`:
+  job имеет `packages: read`, данные входа удаляются после завершения.
+  Для ручного скачивания вне CI нужен отдельный `docker login ghcr.io`.
 - Настроить DNS для `api.slouka.csmmark.me`, `mail.slouka.csmmark.me` и
   `webmail.slouka.csmmark.me` на VPS. Открыть SSH и TCP 80/443, для почты — 25/465/993.
   Внешний API доступен через Traefik на HTTPS, БД и Redis публично не открываются.
