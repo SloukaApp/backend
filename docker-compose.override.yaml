@@ -31,17 +31,43 @@ services:
       - ./migrations:/app/migrations
       - ./alembic.ini:/app/alembic.ini
   database:
+    container_name: slouka_db
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
   mailpit:
+    container_name: slouka_mailpit
+    networks:
+      - slouka_net
+    image: axllent/mailpit
+    volumes:
+      - ./var/mailpit:/data
     ports:
-      - "1025:1025"
+      - "127.0.0.1:8025:8025"
+      - "127.0.0.1:1025:1025"
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATABASE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
   backend:
+    depends_on:
+      mailpit:
+        condition: service_started
+    environment:
+      SMTP__HOST: mailpit
+      SMTP__PORT: 1025
+      SMTP__USE_TLS: "false"
+      SMTP__START_TLS: "false"
     build:
       context: .
       dockerfile: Dockerfile
       target: dev
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./src:/app/src
+
+networks:
+  slouka_net:
+    name: slouka_net

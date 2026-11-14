@@ -221,3 +221,12 @@ __marimo__/
 
 # MacOS
 .DS_Store
+
+# VPS deployment state and local credentials
+production.env
+state/
+releases/
+current
+current.env
+previous.env
+.deploy.lock

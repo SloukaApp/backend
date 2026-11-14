@@ -4,7 +4,7 @@ services:
     networks:
       - slouka_net
     env_file:
-      - .env
+      - ${APP_ENV_FILE:-.env}
     environment:
       DB__DSN: ${DB__CONTAINER_DSN:-postgresql+asyncpg://${DB__USER}:${DB__PASSWORD}@database:5432/${DB__NAME}}
     depends_on:
@@ -15,23 +15,15 @@ services:
     depends_on:
       migrator:
         condition: service_completed_successfully
-      mailpit:
-        condition: service_started
       redis:
         condition: service_healthy
     env_file:
-      - .env
+      - ${APP_ENV_FILE:-.env}
     environment:
       DB__DSN: ${DB__CONTAINER_DSN:-postgresql+asyncpg://${DB__USER}:${DB__PASSWORD}@database:5432/${DB__NAME}}
       REDIS__DSN: ${REDIS__CONTAINER_DSN:-redis://redis:6379/0}
-      SMTP__HOST: mailpit
-      SMTP__PORT: 1025
-      SMTP__USE_TLS: "false"
-      SMTP__START_TLS: "false"
     networks:
       - slouka_net
-    ports:
-      - 8000:8000
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/openapi.json', timeout=3)"]
       interval: 10s
@@ -54,7 +46,6 @@ services:
 
   database:
     image: postgres:17-bookworm
-    container_name: slouka_db
     environment:
       POSTGRES_USER: ${DB__USER}
       POSTGRES_PASSWORD: ${DB__PASSWORD}
@@ -69,22 +60,7 @@ services:
       timeout: 1s
       retries: 5
 
-  mailpit:
-    networks:
-      - slouka_net
-    image: axllent/mailpit
-    container_name: slouka_mailpit
-    volumes:
-      - ./var/mailpit:/data
-    ports:
-      - 8025:8025
-    environment:
-      MP_MAX_MESSAGES: 5000
-      MP_DATABASE: /data/mailpit.db
-      MP_SMTP_AUTH_ACCEPT_ANY: 1
-      MP_SMTP_AUTH_ALLOW_INSECURE: 1
 
 networks:
   slouka_net:
-    name: slouka_net
     driver: bridge

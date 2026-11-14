@@ -1,0 +1,44 @@
+http:
+  routers:
+    api:
+      rule: Host(`api.slouka.csmmark.me`)
+      entryPoints: [websecure]
+      service: api
+      tls:
+        certResolver: le
+    webmail:
+      rule: Host(`webmail.slouka.csmmark.me`)
+      entryPoints: [websecure]
+      service: webmail
+      tls:
+        certResolver: le
+    # Native Stalwart ACME; no admin/JMAP HTTP routes are exposed.
+    mail-acme:
+      rule: Host(`mail.slouka.csmmark.me`) && PathPrefix(`/.well-known/acme-challenge/`)
+      entryPoints: [web]
+      priority: 100
+      service: mail-acme
+    https-redirect:
+      rule: HostRegexp(`.+`)
+      entryPoints: [web]
+      priority: 1
+      middlewares: [https-redirect]
+      service: noop@internal
+  middlewares:
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+  services:
+    api:
+      loadBalancer:
+        servers:
+          - url: http://backend:8000
+    webmail:
+      loadBalancer:
+        servers:
+          - url: http://roundcube:80
+    mail-acme:
+      loadBalancer:
+        servers:
+          - url: http://stalwart:8080

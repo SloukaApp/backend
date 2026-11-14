@@ -13,3 +13,6 @@ node_modules
 build
 dist
 *.log
+production.env
+deploy
+.github
