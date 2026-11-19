@@ -60,7 +60,8 @@ uv run mypy --strict src
 uv run pytest
 ```
 
-PR в `main` запускает эти проверки. Отсутствие собранных тестов в CI пока
+PR в `main` запускает эти проверки. Если push или PR меняет только Markdown-файлы,
+пайплайн пропускается; ручной запуск остаётся доступен. Отсутствие собранных тестов в CI пока
 допускается с предупреждением.
 
 ## Production и деплой
@@ -69,7 +70,7 @@ PR в `main` запускает эти проверки. Отсутствие с
 каталог `/opt/slouka`, Compose-проект `slouka`. Окружение — `production.env`
 по [.env.prod.template](.env.prod.template), права `0600`. Dev override и Make не используются.
 
-Push в `main` или ручной запуск workflow на `main` выполняет:
+Push в `main` с изменениями помимо Markdown или ручной запуск workflow на `main` выполняет:
 
 1. Проверки, сборку target `prod` и публикацию образа в GHCR с тегом SHA коммита.
 2. SSH-вход по паролю и скачивание образа по digest с временным `GITHUB_TOKEN`.
