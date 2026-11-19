@@ -25,7 +25,7 @@ and are assembled in `main.py`, never imported by services or workers.
 
 ## Content & Tags
 
-- Enforce `(deck_id, word_lower)` uniqueness with word.lower(), without stripping diacritics/labels or lemmatizing; duplicates return 409. Homonyms and meanings of one spelling share one card.
+- Enforce `(deck_id, lower(word))` uniqueness with word.lower(), without stripping diacritics/labels or lemmatizing; duplicates return 409. Homonyms and meanings of one spelling share one card.
 - Store meanings, their examples and provided dictionary sources in related tables, preserving ordering and meaning–example relationships. Never invent absent content. Preserve Markdown notes without rewriting.
 - Tags belong to a deck; names are unique within that deck ignoring case. A card and its assigned tag must belong to the same deck, enforced by DB constraints.
 
