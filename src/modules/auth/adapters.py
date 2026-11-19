@@ -1,5 +1,6 @@
 import asyncio
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid, parseaddr
 from typing import Protocol
 from uuid import UUID
 
@@ -32,11 +33,14 @@ class SmtpConfirmationMailer:
         message["From"] = self._config.from_email
         message["To"] = email
         message["Subject"] = "Confirm your Slouka email"
+        message["Date"] = formatdate(usegmt=True)
+        sender_domain = parseaddr(self._config.from_email)[1].rpartition("@")[2]
+        message["Message-ID"] = make_msgid(domain=sender_domain or None)
         message.set_content(
-            "Confirm your email in the Slouka mobile app. Submit this token with your "
-            "installation_id using POST /api/v1/auth/confirm-email. "
+            f"Your Slouka verification code:\n\n{token}\n\n"
+            "Enter this code in the Slouka app to confirm your email address. "
             "The code is valid for 15 minutes, is case-sensitive, and can be used once.\n\n"
-            f"{token}\n"
+            "If you did not request this code, you can ignore this email.\n"
         )
         for attempt in range(self._config.max_retries + 1):
             smtp = aiosmtplib.SMTP(
