@@ -31,6 +31,7 @@ migrations/
 | `auth` | Authentication workflows, access tokens, refresh tokens and devices | [auth/AGENTS.md](src/modules/auth/AGENTS.md) |
 | `decks` | Decks/cards, stored learning state, tags, visibility and copying | [decks/AGENTS.md](src/modules/decks/AGENTS.md) |
 | `practice` | Sessions, accepted answers and scheduling calculations | [practice/AGENTS.md](src/modules/practice/AGENTS.md) |
+| `search` | Verbum dictionary search, parsing, cache and rate limits | [search/AGENTS.md](src/modules/search/AGENTS.md) |
 
 Read the local rules of each module affected by a change, including cross-module workflows. Other capabilities (`stats`, `settings`, `notifications`, `exercises`) remain planned; do not create them until needed.
 

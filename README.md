@@ -147,4 +147,21 @@ HTTPS-сертификаты получает и продлевает Traefik; �
 
 [Общие правила](AGENTS.md) · [Auth](src/modules/auth/AGENTS.md) ·
 [Users](src/modules/users/AGENTS.md) · [Decks](src/modules/decks/AGENTS.md) ·
-[Practice](src/modules/practice/AGENTS.md). Контракты API — в Swagger/OpenAPI по ссылкам выше.
+[Practice](src/modules/practice/AGENTS.md) · [Search](src/modules/search/AGENTS.md). Контракты API — в Swagger/OpenAPI по ссылкам выше.
+
+## Поиск словаря
+
+`GET /api/v1/search?query=замак&page=1` требует Bearer access token и подтверждённый
+email. Поиск возвращает статьи Verbum со значениями, примерами, пометами,
+фразеологией и исходными ID источников; карточки не создаёт. Запрос обрезается и
+приводится к нижнему регистру, 1–200 символов; page ≥ 1. Дефисы, пробелы и ударения
+допустимы. Страница передаётся Verbum без скрытого обхода.
+
+По умолчанию используются только `tsblm2022`, `tsbm`, `klyshka`, `rbs10`.
+Настройки `VERBUM__*`, `CACHE__TTL_DAYS`, `RATE_LIMIT__SEARCH_*` описаны в шаблонах
+окружения. Кэш ≥ 30 суток; лимит 30 запросов/мин на аккаунт учитывает cache hit.
+Отказ Redis — 503; неверный ответ словаря — 502, временная недоступность — 503.
+Пустой результат — 200. TTL не заменяет проверку вместимости и сохранности Redis.
+
+Правила модуля для агентов: [search/AGENTS.md](src/modules/search/AGENTS.md).
+Контракт ответа доступен в OpenAPI.

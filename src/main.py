@@ -1,6 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 
+import httpx
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -15,6 +16,9 @@ from src.core.redis import build_redis
 from src.modules.auth.adapters import SmtpConfirmationMailer
 from src.modules.auth.http_errors import ERROR_MAPPINGS as AUTH_ERROR_MAPPINGS
 from src.modules.auth.router import router as auth_router
+from src.modules.search.adapters import VerbumClient
+from src.modules.search.http_errors import ERROR_MAPPINGS as SEARCH_ERROR_MAPPINGS
+from src.modules.search.router import router as search_router
 from src.modules.users.http_errors import ERROR_MAPPINGS as USERS_ERROR_MAPPINGS
 from src.modules.users.router import router as users_router
 
@@ -34,6 +38,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
         app.state.session_factory = build_session_factory(engine)
         app.state.redis = redis
+        http = await cleanup.enter_async_context(
+            httpx.AsyncClient(
+                timeout=httpx.Timeout(
+                    settings.verbum.read_timeout_seconds,
+                    connect=settings.verbum.connect_timeout_seconds,
+                ),
+                follow_redirects=False,
+            )
+        )
+        app.state.verbum_client = VerbumClient(http, settings.verbum)
         yield
 
 
@@ -60,7 +74,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.app.trusted_proxies)
     error_handler = build_application_error_handler(
-        *CORE_ERROR_MAPPINGS, *USERS_ERROR_MAPPINGS, *AUTH_ERROR_MAPPINGS
+        *CORE_ERROR_MAPPINGS, *USERS_ERROR_MAPPINGS, *AUTH_ERROR_MAPPINGS, *SEARCH_ERROR_MAPPINGS
     )
     app.add_exception_handler(ApplicationError, error_handler)
     app.add_exception_handler(Exception, error_handler)
@@ -68,5 +82,6 @@ def create_app() -> FastAPI:
     api_router = APIRouter(prefix=API_V1_PREFIX)
     api_router.include_router(auth_router)
     api_router.include_router(users_router)
+    api_router.include_router(search_router)
     app.include_router(api_router)
     return app

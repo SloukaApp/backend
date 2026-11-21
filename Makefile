@@ -2,10 +2,13 @@
 
 COMPOSE := docker compose -f docker-compose.yaml -f docker-compose.override.yaml
 
-.PHONY: help up stop down build logs ps config
+.PHONY: help up stop down build logs ps config test
 
 help:
-	@echo "up / stop / down / build / logs / ps / config"
+	@echo "up / stop / down / build / logs / ps / config / test"
+
+test:
+	uv run pytest
 
 up:
 	$(COMPOSE) up -d --build

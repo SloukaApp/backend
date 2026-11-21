@@ -2,7 +2,7 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field, PostgresDsn, RedisDsn, SecretStr, field_validator
+from pydantic import BaseModel, Field, HttpUrl, PostgresDsn, RedisDsn, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -100,7 +100,32 @@ class CacheConfig(BaseModel):
     ttl_days: int = Field(default=MIN_CACHE_TTL_DAYS, ge=MIN_CACHE_TTL_DAYS)
 
 
+class VerbumConfig(BaseModel):
+    url: HttpUrl = HttpUrl("https://verbum.by/api/search")
+    dictionary_ids: tuple[str, ...] = ("tsblm2022", "tsbm", "klyshka", "rbs10")
+    connect_timeout_seconds: float = Field(default=5.0, gt=0)
+    read_timeout_seconds: float = Field(default=10.0, gt=0)
+    max_retries: int = Field(default=2, ge=0, le=3)
+
+    @field_validator("url")
+    @classmethod
+    def secure_url(cls, value: HttpUrl) -> HttpUrl:
+        if value.scheme != "https" or value.username or value.password:
+            raise ValueError("Verbum requires HTTPS without credentials")
+        return value
+
+    @field_validator("dictionary_ids")
+    @classmethod
+    def supported_dictionaries(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        allowed = ("tsblm2022", "tsbm", "klyshka", "rbs10")
+        if not value or len(value) != len(set(value)) or any(item not in allowed for item in value):
+            raise ValueError("Choose a nonempty unique subset of supported dictionaries")
+        return tuple(item for item in allowed if item in value)
+
+
 class RateLimitConfig(BaseModel):
+    search_window_seconds: int = Field(default=60, ge=1)
+    search_max_requests: int = Field(default=30, ge=1)
     login_window_seconds: int = Field(default=900, ge=1)
     login_max_attempts: int = Field(default=10, ge=1)
     login_ip_window_seconds: int = Field(default=60, ge=1)
@@ -131,6 +156,7 @@ class Settings(BaseSettings):
     smtp: SmtpConfig
     http: HttpClientConfig = Field(default_factory=HttpClientConfig)
     cache: CacheConfig = Field(default_factory=CacheConfig)
+    verbum: VerbumConfig = Field(default_factory=VerbumConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
