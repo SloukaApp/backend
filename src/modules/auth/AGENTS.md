@@ -31,12 +31,12 @@ and are assembled in `main.py`, never imported by services or workers.
 
 ## Devices
 
-- Own `devices` and `refresh_tokens`; a device represents an installation/account authorization, not a push subscription. Installation identity is unique per `(user_id, installation_id)`; switching accounts must not transfer authorization.
+- Own `devices` and `refresh_tokens`; a device represents an account authorization session. Each login or successful confirmation creates a server-generated device ID. Refresh continues the same session.
 - Count active devices by valid authorization, not historical refresh rows. Push subscription data belongs to notifications; disabling/revoking push never logs a device out.
 
 ## Implementation Notes
 
-- `installation_id` is a stable client installation UUID, not a secret or proof of authorization. Device lists include inactive history. No GET confirmation, password recovery, or account-deletion endpoint is implemented.
+- Device lists include inactive history. No GET confirmation, password recovery, or account-deletion endpoint is implemented.
 - Confirmation mail contains the code and app instructions, not a link or HTTP API details. Set Date and a unique Message-ID before SMTP; retain both across retries of the same message. SMTP runs after commit: delivery failure returns 503 but leaves the account/confirmation saved; retry through resend after cooldown. SMTP retries can duplicate delivery; only the latest non-revoked code is valid.
 - Registration stores the client-provided consent version; backend does not supply legal text. Confirmation returns a token pair; registration does not.
 - Account row locks through UsersService serialize issuance, refresh, resend and password changes; refresh/confirmation rows are also locked. Keep the dependency `auth → users`; HTTP auth dependencies in users do not reverse the service dependency.

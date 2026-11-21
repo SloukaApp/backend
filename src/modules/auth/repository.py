@@ -46,12 +46,6 @@ async def revoke_confirmations(session: AsyncSession, user_id: UUID, now: dateti
     )
 
 
-async def get_device(session: AsyncSession, user_id: UUID, installation_id: UUID) -> Device | None:
-    return await session.scalar(
-        select(Device).where(Device.user_id == user_id, Device.installation_id == installation_id)
-    )
-
-
 async def get_owned_device(session: AsyncSession, user_id: UUID, device_id: UUID) -> Device | None:
     return await session.scalar(
         select(Device).where(Device.user_id == user_id, Device.id == device_id)
@@ -71,14 +65,6 @@ async def active_device_count(session: AsyncSession, user_id: UUID, now: datetim
             )
         )
         or 0
-    )
-
-
-async def current_refresh(session: AsyncSession, device_id: UUID) -> RefreshToken | None:
-    return await session.scalar(
-        select(RefreshToken).where(
-            RefreshToken.device_id == device_id, RefreshToken.revoked_at.is_(None)
-        )
     )
 
 
@@ -113,7 +99,6 @@ async def flush(session: AsyncSession) -> None:
         state = getattr(exc.orig, "sqlstate", None)
         constraint = getattr(getattr(exc.orig, "__cause__", None), "constraint_name", None)
         if state == "23505" and constraint in {
-            "uq_devices_user_installation",
             "uq_refresh_tokens_current_device",
             "uq_refresh_tokens_token_hash",
             "uq_email_confirmations_current_user",

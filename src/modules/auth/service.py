@@ -58,7 +58,7 @@ class AuthService:
         except UserNotFoundError as exc:
             raise InvalidAccessError() from exc
 
-    async def login(self, email: str, password: str, installation_id: UUID) -> TokenPair:
+    async def login(self, email: str, password: str) -> TokenPair:
         """Raise InvalidCredentialsError, EmailUnconfirmedError, or DeviceLimitError."""
         try:
             account = await self.users.verify_credentials(email, password)
@@ -69,27 +69,13 @@ class AuthService:
             raise
         if not account.email_confirmed:
             raise EmailUnconfirmedError()
-        return await self._authorize(account.id, installation_id, datetime.now(UTC))
+        return await self._authorize(account.id, datetime.now(UTC))
 
-    async def _authorize(self, user_id: UUID, installation_id: UUID, now: datetime) -> TokenPair:
-        device = await repository.get_device(self.uow.session, user_id, installation_id)
-        current = await repository.current_refresh(self.uow.session, device.id) if device else None
-        already_active = current is not None and current.expires_at > now
+    async def _authorize(self, user_id: UUID, now: datetime) -> TokenPair:
         count = await repository.active_device_count(self.uow.session, user_id, now)
-        if not already_active and count >= self.config.max_active_devices:
+        if count >= self.config.max_active_devices:
             raise DeviceLimitError()
-        if current is not None:
-            current.revoked_at = now
-            await repository.flush(self.uow.session)
-        if device is None:
-            device = Device(
-                user_id=user_id,
-                installation_id=installation_id,
-                created_at=now,
-                last_authorized_at=now,
-            )
-        else:
-            device.last_authorized_at = now
+        device = Device(user_id=user_id, created_at=now, last_authorized_at=now)
         return await self._issue(device, now)
 
     async def _issue(self, device: Device, now: datetime) -> TokenPair:
@@ -139,7 +125,6 @@ class AuthService:
             items=[
                 DeviceInfo(
                     id=d.id,
-                    installation_id=d.installation_id,
                     created_at=d.created_at,
                     last_authorized_at=d.last_authorized_at,
                     active=active,
@@ -214,7 +199,7 @@ class AuthService:
         """Call only outside a transaction; raise MailDeliveryError after persisted registration."""
         await self.mailer.send_confirmation(delivery.email, delivery.token)
 
-    async def confirm_email(self, email: str, raw: str, installation_id: UUID) -> TokenPair:
+    async def confirm_email(self, email: str, raw: str) -> TokenPair:
         """Raise InvalidConfirmationError or DeviceLimitError; all changes atomic."""
         digest = token_hash(raw)
         try:
@@ -234,6 +219,6 @@ class AuthService:
             raise InvalidConfirmationError()
         confirmation.consumed_at = now
         await self.users.confirm_email(owner)
-        result = await self._authorize(owner, installation_id, now)
+        result = await self._authorize(owner, now)
         await repository.flush(self.uow.session)
         return result

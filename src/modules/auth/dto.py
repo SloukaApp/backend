@@ -23,7 +23,6 @@ class Principal(BaseModel):
 
 class DeviceInfo(BaseModel):
     id: UUID
-    installation_id: UUID
     created_at: datetime
     last_authorized_at: datetime
     active: bool

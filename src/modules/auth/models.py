@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid7
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, UniqueConstraint, text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.db import BaseModel
@@ -9,13 +9,9 @@ from src.core.db import BaseModel
 
 class Device(BaseModel):
     __tablename__ = "devices"
-    __table_args__ = (
-        UniqueConstraint("user_id", "installation_id", name="uq_devices_user_installation"),
-    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid7)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
-    installation_id: Mapped[UUID]
     created_at: Mapped[datetime]
     last_authorized_at: Mapped[datetime]
 

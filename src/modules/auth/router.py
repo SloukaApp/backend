@@ -16,7 +16,6 @@ from src.modules.auth.schemas import (
     CredentialsRequest,
     DeliveryResponse,
     DevicesResponse,
-    LoginRequest,
     PasswordChangeRequest,
     RefreshRequest,
     RegistrationRequest,
@@ -64,7 +63,7 @@ async def resend(
 )
 async def confirm(data: ConfirmationRequest, uow: UoWDep, service: AuthServiceDep) -> TokenResponse:
     async with uow:
-        result = await service.confirm_email(data.email, data.token, data.installation_id)
+        result = await service.confirm_email(data.email, data.token)
         return TokenResponse(**result.model_dump())
 
 
@@ -74,9 +73,9 @@ async def confirm(data: ConfirmationRequest, uow: UoWDep, service: AuthServiceDe
     response_model=TokenResponse,
     responses={code: {"model": ErrorResponse} for code in (401, 403, 409, 422, 429, 503)},
 )
-async def login(data: LoginRequest, uow: UoWDep, service: AuthServiceDep) -> TokenResponse:
+async def login(data: CredentialsRequest, uow: UoWDep, service: AuthServiceDep) -> TokenResponse:
     async with uow:
-        result = await service.login(data.email, data.password, data.installation_id)
+        result = await service.login(data.email, data.password)
         return TokenResponse(**result.model_dump())
 
 

@@ -35,7 +35,7 @@ migrations/
 
 Read the local rules of each module affected by a change, including cross-module workflows. Other capabilities (`stats`, `settings`, `notifications`, `exercises`) remain planned; do not create them until needed.
 
-Planned ownership: `auth` owns `devices` (installations and authorization); `notifications` owns `push_subscriptions` linked by `device_id`, plus delivery records. Push tokens, permission and push-disable state belong to the subscription, not the device. Notifications uses public auth operations to verify devices; auth does not call notifications. Disabling push never revokes authorization. Before sending, verify the account/device is still authorized.
+Planned ownership: `auth` owns `devices` (authorization sessions); `notifications` owns `push_subscriptions` linked by `device_id`, plus delivery records. Push tokens, permission and push-disable state belong to the subscription, not the device. Notifications uses public auth operations to verify devices; auth does not call notifications. Disabling push never revokes authorization. Before sending, verify the account/device is still authorized.
 
 Statistics are computed from `activity_logs`; learned status and difficulty come from `cards`. Do not introduce `user_stats` or stored calendars. Activity remains a business fact, not a mutation audit.
 

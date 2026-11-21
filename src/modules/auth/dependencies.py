@@ -10,7 +10,7 @@ from src.modules.auth.adapters import ConfirmationMailer
 from src.modules.auth.dto import Principal
 from src.modules.auth.errors import EmailUnconfirmedError, InvalidAccessError
 from src.modules.auth.rate_limit import AuthRateLimits
-from src.modules.auth.schemas import ConfirmationRequest, LoginRequest
+from src.modules.auth.schemas import ConfirmationRequest, CredentialsRequest
 from src.modules.auth.service import AuthService
 from src.modules.users.dependencies import UsersServiceDep
 from src.modules.users.dto import UserState
@@ -40,7 +40,7 @@ async def check_confirmation(
     await limits.confirmation(data.email, ip)
 
 
-async def check_login(data: LoginRequest, ip: ClientIPDep, limits: RateLimitsDep) -> None:
+async def check_login(data: CredentialsRequest, ip: ClientIPDep, limits: RateLimitsDep) -> None:
     await limits.login(data.email, ip)
 
 

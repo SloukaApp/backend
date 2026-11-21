@@ -26,14 +26,9 @@ class CredentialsRequest(BaseModel):
     password: str = Field(repr=False)
 
 
-class LoginRequest(CredentialsRequest):
-    installation_id: UUID
-
-
 class ConfirmationRequest(BaseModel):
     email: Email
     token: str = Field(min_length=6, max_length=6, pattern=r"^[A-Za-z0-9]{6}$", repr=False)
-    installation_id: UUID
 
 
 class RefreshRequest(BaseModel):
@@ -58,7 +53,6 @@ class DeliveryResponse(BaseModel):
 
 class DeviceResponse(BaseModel):
     id: UUID
-    installation_id: UUID
     created_at: datetime
     last_authorized_at: datetime
     active: bool
