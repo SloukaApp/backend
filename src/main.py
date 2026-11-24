@@ -16,9 +16,9 @@ from src.core.redis import build_redis
 from src.modules.auth.adapters import SmtpConfirmationMailer
 from src.modules.auth.http_errors import ERROR_MAPPINGS as AUTH_ERROR_MAPPINGS
 from src.modules.auth.router import router as auth_router
-from src.modules.search.adapters import VerbumClient
 from src.modules.search.http_errors import ERROR_MAPPINGS as SEARCH_ERROR_MAPPINGS
 from src.modules.search.router import router as search_router
+from src.modules.search.verbum import VerbumClient
 from src.modules.users.http_errors import ERROR_MAPPINGS as USERS_ERROR_MAPPINGS
 from src.modules.users.router import router as users_router
 

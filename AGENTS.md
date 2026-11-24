@@ -31,7 +31,7 @@ migrations/
 | `auth` | Authentication workflows, access tokens, refresh tokens and devices | [auth/AGENTS.md](src/modules/auth/AGENTS.md) |
 | `decks` | Decks/cards, stored learning state, tags, visibility and copying | [decks/AGENTS.md](src/modules/decks/AGENTS.md) |
 | `practice` | Sessions, accepted answers and scheduling calculations | [practice/AGENTS.md](src/modules/practice/AGENTS.md) |
-| `search` | Verbum dictionary search, parsing, cache and rate limits | [search/AGENTS.md](src/modules/search/AGENTS.md) |
+| `search` | Verbum dictionary search, parsing and cache | [search/AGENTS.md](src/modules/search/AGENTS.md) |
 
 Read the local rules of each module affected by a change, including cross-module workflows. Other capabilities (`stats`, `settings`, `notifications`, `exercises`) remain planned; do not create them until needed.
 
@@ -95,7 +95,7 @@ async with uow:
 | `adapters.py` | External-client Protocols and implementations. |
 | `dependencies.py` | Dependency assembly for API handlers. |
 
-- Routers contain no SQL or business decisions. Services never import transport. Domain code has no I/O, session, configuration, or clock access. Services depend on external-client `Protocol` interfaces; concrete adapters are wired in composition roots.
+- Routers contain no SQL or business decisions. Services never import transport. Domain code has no I/O, session, configuration, or clock access. Services depend on external-client `Protocol` interfaces unless the module rules explicitly allow concrete clients; clients are wired in composition roots.
 - Absolute imports rooted at `src`; relative cross-module imports forbidden. `core` never imports `modules` (sole exception: the ORM metadata aggregator Alembic needs). Beyond module skeletons, create only files with real content; no speculative helpers or empty packages.
 - Generate UUIDv7 in application code; never assign generated/trigger-maintained columns such as `updated_at`.
 - Store event instants in UTC using `timestamptz`; derive local dates using the user's validated IANA timezone. Keep local reminder times and delivery dates distinct from instants.

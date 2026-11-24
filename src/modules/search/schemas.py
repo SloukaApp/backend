@@ -1,59 +1,85 @@
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 from src.modules.search.dto import SearchQuery
 
 
 class SearchRequest(BaseModel):
-    query: SearchQuery = Field(description="Trimmed lowercase query, 1–200 characters")
+    query: SearchQuery = Field(
+        description="Trimmed lowercase query, 1–200 characters without ASCII controls"
+    )
     page: int = Field(default=1, ge=1)
-
-
-class LabelResponse(BaseModel):
-    text: str
-    explanation: str | None
-
-
-class BlockResponse(BaseModel):
-    kind: Literal["definition", "translation", "synonyms", "example", "note", "phrase", "related"]
-    text: str
-    labels: list[LabelResponse]
-
-
-class SenseResponse(BaseModel):
-    number: int | None
-    blocks: list[BlockResponse]
-
-
-class EntryResponse(BaseModel):
-    headword: str
-    alternative_headwords: list[str]
-    accent: str | None
-    header: list[BlockResponse]
-    senses: list[SenseResponse]
-    phrases: list[BlockResponse]
-    related: list[BlockResponse]
-
-
-class ArticleResponse(BaseModel):
-    article_id: str
-    dictionary_id: str
-    dictionary_name: str
-    entries: list[EntryResponse]
 
 
 class PaginationResponse(BaseModel):
     requested_page: int
     upstream_current: int
-    upstream_total: int = Field(
-        description="Unmodified Verbum Total; observed page count, not article count"
-    )
-    upstream_relation: str = Field(description="Unmodified Verbum relation; observed 'eq'")
+    upstream_total: int = Field(description="Unmodified Verbum Total")
+    upstream_relation: str = Field(description="Unmodified Verbum Relation")
 
 
-class SearchResponse(BaseModel):
+class SourceResponse(BaseModel):
+    dictionary_id: str
+    dictionary_name: str
+    article_id: str
+
+
+class DictionaryEntryResponse(BaseModel):
+    word: str
+    source: SourceResponse
+
+
+class LexicalEntryResponse(DictionaryEntryResponse):
+    alternative_words: list[str]
+    homonym: str | None
+    grammar: str | None
+    phrases: list[str]
+
+
+class DefinitionExampleResponse(BaseModel):
+    text: str
+    citation: str | None
+
+
+class DefinitionResponse(BaseModel):
+    number: int | None
+    text: str
+    examples: list[DefinitionExampleResponse]
+    notes: list[str]
+
+
+class TranslationResponse(BaseModel):
+    number: int | None
+    text: str
+    examples: list[str]
+
+
+class SearchEntryResponse(LexicalEntryResponse):
+    definitions: list[DefinitionResponse]
+    related: list[str]
+
+
+class TranslateEntryResponse(LexicalEntryResponse):
+    translations: list[TranslationResponse]
+
+
+class SynonymsEntryResponse(DictionaryEntryResponse):
+    synonyms: str
+
+
+class DictionaryResponse[EntryType: DictionaryEntryResponse](BaseModel):
     query: str
-    articles: list[ArticleResponse]
-    term_suggestions: list[str]
+    items: list[EntryType]
+    suggestions: list[str]
     pagination: PaginationResponse
+
+
+class SearchResponse(DictionaryResponse[SearchEntryResponse]):
+    pass
+
+
+class TranslateResponse(DictionaryResponse[TranslateEntryResponse]):
+    pass
+
+
+class SynonymsResponse(DictionaryResponse[SynonymsEntryResponse]):
+    pass

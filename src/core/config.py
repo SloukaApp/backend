@@ -120,12 +120,10 @@ class VerbumConfig(BaseModel):
         allowed = ("tsblm2022", "tsbm", "klyshka", "rbs10")
         if not value or len(value) != len(set(value)) or any(item not in allowed for item in value):
             raise ValueError("Choose a nonempty unique subset of supported dictionaries")
-        return tuple(item for item in allowed if item in value)
+        return value
 
 
 class RateLimitConfig(BaseModel):
-    search_window_seconds: int = Field(default=60, ge=1)
-    search_max_requests: int = Field(default=30, ge=1)
     login_window_seconds: int = Field(default=900, ge=1)
     login_max_attempts: int = Field(default=10, ge=1)
     login_ip_window_seconds: int = Field(default=60, ge=1)

@@ -1,66 +1,83 @@
-import hashlib
-import json
-from uuid import UUID
+from collections.abc import Callable
 
-from src.core.rate_limit import RateLimiter
-from src.modules.search.adapters import DictionaryClient, SearchCache
-from src.modules.search.dto import Pagination, SearchInput, SearchResult
-from src.modules.search.errors import SearchInvalidResponseError
-from src.modules.search.parser import PARSER_VERSION, parse_article
+from src.modules.search.cache import Operation, RedisSearchCache
+from src.modules.search.dto import (
+    DictionaryEntry,
+    DictionaryResult,
+    Pagination,
+    SearchInput,
+    SearchResult,
+    SynonymsResult,
+    TranslateResult,
+)
+from src.modules.search.errors import SearchInvalidResponseError, SearchUnavailableError
+from src.modules.search.external import VerbumArticle
+from src.modules.search.projections import search_entries, synonyms_entries, translate_entries
+from src.modules.search.verbum import VerbumClient
 
 
 class SearchService:
     def __init__(
-        self,
-        client: DictionaryClient,
-        cache: SearchCache,
-        limiter: RateLimiter,
-        dictionaries: tuple[str, ...],
-        key_prefix: str,
-        ttl_seconds: int,
-        window_seconds: int,
-        max_requests: int,
+        self, client: VerbumClient, cache: RedisSearchCache, dictionaries: tuple[str, ...]
     ) -> None:
         self.client = client
         self.cache = cache
-        self.limiter = limiter
         self.dictionaries = dictionaries
-        self.key_prefix = key_prefix
-        self.ttl_seconds = ttl_seconds
-        self.window_seconds = window_seconds
-        self.max_requests = max_requests
 
-    async def search(self, account_id: UUID, data: SearchInput) -> SearchResult:
-        """Search outside DB scopes.
+    async def search(self, data: SearchInput) -> SearchResult:
+        """Return definitions outside DB scopes.
 
         Raises SearchInvalidResponseError, SearchUnavailableError,
-        SearchCacheUnavailableError, RateLimitExceededError or RateLimitUnavailableError.
-        Search owns this use case; auth supplies a materialized confirmed account.
+        or SearchCacheUnavailableError.
         """
-        await self.limiter.check_many(
-            [(f"search:account:{account_id}", self.window_seconds, self.max_requests)]
+        return await self._lookup(
+            "search", data, {"tsblm2022", "tsbm"}, SearchResult, search_entries
         )
-        digest = hashlib.sha256(
-            json.dumps([data.query, self.dictionaries, data.page, PARSER_VERSION]).encode()
-        ).hexdigest()
-        key = f"{self.key_prefix}:search:{PARSER_VERSION}:{digest}"
-        cached = await self.cache.get(key)
+
+    async def translate(self, data: SearchInput) -> TranslateResult:
+        """Return Russian–Belarusian translations. Raises the same errors as search."""
+        return await self._lookup("translate", data, {"rbs10"}, TranslateResult, translate_entries)
+
+    async def synonyms(self, data: SearchInput) -> SynonymsResult:
+        """Return Belarusian synonyms. Raises the same errors as search."""
+        return await self._lookup("synonyms", data, {"klyshka"}, SynonymsResult, synonyms_entries)
+
+    async def _lookup[Entry: DictionaryEntry](
+        self,
+        operation: Operation,
+        data: SearchInput,
+        operation_dictionaries: set[str],
+        result_type: type[DictionaryResult[Entry]],
+        entries_from: Callable[[VerbumArticle], list[Entry]],
+    ) -> DictionaryResult[Entry]:
+        dictionaries = tuple(
+            value for value in self.dictionaries if value in operation_dictionaries
+        )
+        if not dictionaries:
+            raise SearchUnavailableError()
+
+        key = self.cache.key(operation, data, dictionaries)
+        cached = await self.cache.get(key, result_type)
         if cached is not None:
             return cached
-        upstream = await self.client.search(data.query, self.dictionaries, data.page)
-        if set(upstream.DictIDs) != set(self.dictionaries) or any(
-            article.DictionaryID not in self.dictionaries for article in upstream.Articles
+
+        upstream = await self.client.search(data.query, dictionaries, data.page)
+        if sorted(upstream.DictIDs) != sorted(dictionaries) or any(
+            article.DictionaryID not in dictionaries for article in upstream.Articles
         ):
             raise SearchInvalidResponseError()
+        articles = sorted(
+            upstream.Articles, key=lambda article: dictionaries.index(article.DictionaryID)
+        )
         try:
-            articles = [parse_article(article) for article in upstream.Articles]
+            items = [entry for article in articles for entry in entries_from(article)]
         except (ValueError, KeyError, RecursionError, AssertionError) as exc:
             raise SearchInvalidResponseError() from exc
-        articles.sort(key=lambda article: self.dictionaries.index(article.dictionary_id))
-        result = SearchResult(
+
+        result = result_type(
             query=data.query,
-            articles=articles,
-            term_suggestions=upstream.TermSuggestions,
+            items=items,
+            suggestions=upstream.TermSuggestions,
             pagination=Pagination(
                 requested_page=data.page,
                 upstream_current=upstream.Pagination.Current,
@@ -68,5 +85,5 @@ class SearchService:
                 upstream_relation=upstream.Pagination.Relation,
             ),
         )
-        await self.cache.put(key, result, self.ttl_seconds)
+        await self.cache.put(key, result)
         return result

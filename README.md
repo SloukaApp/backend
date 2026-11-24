@@ -149,19 +149,57 @@ HTTPS-сертификаты получает и продлевает Traefik; �
 [Users](src/modules/users/AGENTS.md) · [Decks](src/modules/decks/AGENTS.md) ·
 [Practice](src/modules/practice/AGENTS.md) · [Search](src/modules/search/AGENTS.md). Контракты API — в Swagger/OpenAPI по ссылкам выше.
 
-## Поиск словаря
+## Словарное API
 
-`GET /api/v1/search?query=замак&page=1` требует Bearer access token и подтверждённый
-email. Поиск возвращает статьи Verbum со значениями, примерами, пометами,
-фразеологией и исходными ID источников; карточки не создаёт. Запрос обрезается и
-приводится к нижнему регистру, 1–200 символов; page ≥ 1. Дефисы, пробелы и ударения
-допустимы. Страница передаётся Verbum без скрытого обхода.
+Все операции требуют Bearer access token и подтверждённый email.
 
-По умолчанию используются только `tsblm2022`, `tsbm`, `klyshka`, `rbs10`.
-Настройки `VERBUM__*`, `CACHE__TTL_DAYS`, `RATE_LIMIT__SEARCH_*` описаны в шаблонах
-окружения. Кэш ≥ 30 суток; лимит 30 запросов/мин на аккаунт учитывает cache hit.
-Отказ Redis — 503; неверный ответ словаря — 502, временная недоступность — 503.
-Пустой результат — 200. TTL не заменяет проверку вместимости и сохранности Redis.
+| Пример запроса | Данные |
+| --- | --- |
+| `GET /api/v1/search?query=замак&page=1` | Белорусские толкования из `tsblm2022` и `tsbm` |
+| `GET /api/v1/translate?query=собака&page=1` | Перевод с русского на белорусский из `rbs10` |
+| `GET /api/v1/synonyms?query=хутка&page=1` | Белорусские синонимы из `klyshka` |
 
-Правила модуля для агентов: [search/AGENTS.md](src/modules/search/AGENTS.md).
-Контракт ответа доступен в OpenAPI.
+Обязательный `query` обрезается по краям и приводится к нижнему регистру. Длина после
+нормализации — 1–200 символов. Управляющие символы ASCII запрещены. `page` — целое
+число от 1, по умолчанию 1. Страница передаётся Verbum без изменений и относится
+к словарям выбранной операции.
+
+```json
+{
+  "query": "замак",
+  "items": [],
+  "suggestions": ["за́мак"],
+  "pagination": {
+    "requested_page": 999,
+    "upstream_current": 999,
+    "upstream_total": 3,
+    "upstream_relation": "eq"
+  }
+}
+```
+
+`upstream_total` передаёт исходный Verbum Total. Пустая страница возвращает 200
+и сохраняет подсказки. В каждом элементе `items` есть `word` и `source`
+с полями `dictionary_id`, `dictionary_name`, `article_id`. Одна статья может
+дать несколько элементов.
+
+- `search` возвращает `alternative_words`, `homonym`, `grammar`, `phrases`,
+  `related` и `definitions`. У каждого значения есть `number`, `text`, `notes`
+  и `examples` с полями `text` и `citation`.
+- `translate` возвращает `alternative_words`, `homonym`, `grammar`, `phrases`
+  и `translations`. У каждого перевода есть `number`, `text` и `examples`
+  (целые двуязычные примеры).
+- `synonyms` возвращает строку `synonyms` с исходными пометами. Группы,
+  разделённые в словаре знаком `□`, отделяются точкой с запятой.
+
+Массивы присутствуют даже при отсутствии элементов. Отсутствующие `homonym`,
+`grammar`, `number` и `citation` передаются как `null`.
+
+Приоритет словарей задаёт порядок в `VERBUM__DICTIONARY_IDS`. Redis хранит готовые
+результаты отдельно для каждого маршрута, запроса, набора словарей и страницы.
+TTL задаёт `CACHE__TTL_DAYS` (минимум 30 суток). Некорректный ответ Verbum даёт 502.
+Если словари операции отключены, Verbum временно недоступен или произошёл отказ Redis,
+API возвращает 503.
+
+Схемы маршрутов доступны в `/api/v1/openapi.json`.
+[Правила модуля search](src/modules/search/AGENTS.md).
