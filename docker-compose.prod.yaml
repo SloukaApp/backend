@@ -27,6 +27,21 @@ services:
       DB__POOL_SIZE: 5
       DB__MAX_OVERFLOW: 2
       REDIS__MAX_CONNECTIONS: 5
+    networks:
+      slouka_net: {}
+      edge: {}
+
+  worker:
+    image: ${BACKEND_IMAGE:?Set an immutable GHCR digest}
+    restart: unless-stopped
+    mem_limit: 384m
+    cpus: 0.5
+    logging: *logging
+    environment:
+      APP__ENV: production
+      DB__POOL_SIZE: 4
+      DB__MAX_OVERFLOW: 0
+      REDIS__MAX_CONNECTIONS: 5
       SMTP__HOST: mail.slouka.csmmark.me
       SMTP__PORT: 465
       SMTP__USE_TLS: "true"
@@ -36,7 +51,6 @@ services:
       SMTP__PASSWORD: ${SMTP__PASSWORD:?Set noreply SMTP password}
     networks:
       slouka_net: {}
-      edge: {}
       mail: {}
 
   database:

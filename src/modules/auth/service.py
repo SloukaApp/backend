@@ -1,11 +1,12 @@
 import logging
 from datetime import UTC, datetime, timedelta
+from hmac import compare_digest
 from uuid import UUID
 
 from src.core.config import AuthConfig
 from src.core.uow import UnitOfWork
 from src.modules.auth import repository
-from src.modules.auth.adapters import ConfirmationMailer, decode_access
+from src.modules.auth.adapters import decode_access
 from src.modules.auth.domain import confirmation_token, encode_access, random_token, token_hash
 from src.modules.auth.dto import (
     ConfirmationDelivery,
@@ -39,12 +40,10 @@ class AuthService:
         uow: UnitOfWork,
         users: UsersService,
         config: AuthConfig,
-        mailer: ConfirmationMailer,
     ) -> None:
         self.uow = uow
         self.users = users
         self.config = config
-        self.mailer = mailer
 
     async def authenticate(self, token: str) -> tuple[Principal, UserState]:
         """Raise InvalidAccessError for invalid JWT or absent account."""
@@ -157,13 +156,13 @@ class AuthService:
         await self.users.change_password(user_id, current_password, new_password)
         await repository.revoke_all(self.uow.session, user_id, datetime.now(UTC))
 
-    async def register(self, data: CreateUserInput) -> ConfirmationDelivery:
-        """Raise EmailAlreadyExistsError; delivery DTO is private, never an HTTP response."""
+    async def register(self, data: CreateUserInput) -> UUID:
+        """Raise EmailAlreadyExistsError or AuthorizationConflictError."""
         account = await self.users.create_user(data)
-        return await self._prepare_confirmation(account)
+        return await self._reserve_confirmation(account.id)
 
-    async def resend_confirmation(self, email: str, password: str) -> ConfirmationDelivery:
-        """Raise InvalidCredentialsError or ConfirmationConflictError."""
+    async def resend_confirmation(self, email: str, password: str) -> UUID:
+        """Raise InvalidCredentialsError or a confirmation or authorization conflict."""
         account = await self.users.verify_credentials(email, password)
         account = await self.users.get_account(account.id, for_update=True)
         account = await self.users.verify_credentials(email, password)
@@ -177,48 +176,83 @@ class AuthService:
         ):
             raise ConfirmationConflictError()
         await repository.revoke_confirmations(self.uow.session, account.id, now)
-        return await self._prepare_confirmation(account)
+        return await self._reserve_confirmation(account.id)
 
-    async def _prepare_confirmation(self, account: UserState) -> ConfirmationDelivery:
+    async def _reserve_confirmation(self, user_id: UUID) -> UUID:
         now = datetime.now(UTC)
-        raw = confirmation_token()
-        await repository.add_confirmation(
-            self.uow.session,
-            EmailConfirmation(
-                user_id=account.id,
-                token_hash=token_hash(raw),
-                created_at=now,
-                expires_at=now + timedelta(seconds=self.config.confirmation_ttl_seconds),
-                consumed_at=None,
-                revoked_at=None,
-            ),
+        confirmation = EmailConfirmation(
+            user_id=user_id,
+            created_at=now,
+            expires_at=now + timedelta(seconds=self.config.confirmation_ttl_seconds),
+            consumed_at=None,
+            revoked_at=None,
         )
-        return ConfirmationDelivery(email=account.email, token=raw)
+        await repository.add_confirmation(self.uow.session, confirmation)
+        return confirmation.id
 
-    async def deliver_confirmation(self, delivery: ConfirmationDelivery) -> None:
-        """Call only outside a transaction; raise MailDeliveryError after persisted registration."""
-        await self.mailer.send_confirmation(delivery.email, delivery.token)
+    async def prepare_confirmation_delivery(
+        self, confirmation_id: UUID
+    ) -> ConfirmationDelivery | None:
+        """Derive the same code on each delivery attempt while the confirmation is active."""
+        prepared = await self._confirmation_for_delivery(confirmation_id)
+        if prepared is None:
+            return None
+        confirmation, account = prepared
+        return ConfirmationDelivery(
+            email=account.email,
+            code=self._confirmation_code(confirmation.id),
+            created_at=confirmation.created_at,
+            expires_at=confirmation.expires_at,
+        )
 
-    async def confirm_email(self, email: str, raw: str) -> TokenPair:
-        """Raise InvalidConfirmationError or DeviceLimitError; all changes atomic."""
-        digest = token_hash(raw)
-        try:
-            account = await self.users.get_account_by_email(email)
-            owner = account.id
-            await self.users.get_account(owner, for_update=True)
-        except UserNotFoundError as exc:
-            raise InvalidConfirmationError() from exc
-        confirmation = await repository.get_confirmation(self.uow.session, owner, digest)
-        now = datetime.now(UTC)
+    async def confirmation_delivery_is_current(self, confirmation_id: UUID) -> bool:
+        """Check whether the confirmation is still active."""
+        return await self._confirmation_for_delivery(confirmation_id) is not None
+
+    async def _confirmation_for_delivery(
+        self, confirmation_id: UUID
+    ) -> tuple[EmailConfirmation, UserState] | None:
+        confirmation = await repository.get_confirmation_by_id(self.uow.session, confirmation_id)
         if (
             confirmation is None
             or confirmation.consumed_at is not None
             or confirmation.revoked_at is not None
+            or confirmation.expires_at <= datetime.now(UTC)
+        ):
+            return None
+        try:
+            account = await self.users.get_account(confirmation.user_id)
+        except UserNotFoundError:
+            return None
+        if account.email_confirmed:
+            return None
+        return confirmation, account
+
+    def _confirmation_code(self, confirmation_id: UUID) -> str:
+        return confirmation_token(
+            confirmation_id, self.config.confirmation_secret.get_secret_value()
+        )
+
+    async def confirm_email(self, email: str, raw: str) -> TokenPair:
+        """Raise InvalidConfirmationError or DeviceLimitError; all changes atomic."""
+        try:
+            account = await self.users.get_account_by_email(email)
+            account = await self.users.get_account(account.id, for_update=True)
+        except UserNotFoundError as exc:
+            raise InvalidConfirmationError() from exc
+        if account.email_confirmed:
+            raise InvalidConfirmationError()
+        confirmation = await repository.get_current_confirmation(self.uow.session, account.id)
+        now = datetime.now(UTC)
+        if (
+            confirmation is None
             or confirmation.expires_at <= now
+            or not raw.isascii()
+            or not compare_digest(raw, self._confirmation_code(confirmation.id))
         ):
             raise InvalidConfirmationError()
         confirmation.consumed_at = now
-        await self.users.confirm_email(owner)
-        result = await self._authorize(owner, now)
+        await self.users.confirm_email(account.id)
+        result = await self._authorize(account.id, now)
         await repository.flush(self.uow.session)
         return result

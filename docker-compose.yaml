@@ -31,6 +31,21 @@ services:
       retries: 5
       start_period: 10s
 
+  worker:
+    command: ["taskiq", "worker", "src.worker.bootstrap:broker", "--workers", "1", "--max-async-tasks", "4"]
+    depends_on:
+      migrator:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    env_file:
+      - ${APP_ENV_FILE:-.env}
+    environment:
+      DB__DSN: ${DB__CONTAINER_DSN:-postgresql+asyncpg://${DB__USER}:${DB__PASSWORD}@database:5432/${DB__NAME}}
+      REDIS__DSN: ${REDIS__CONTAINER_DSN:-redis://redis:6379/0}
+    networks:
+      - slouka_net
+
   redis:
     image: redis:7.4-bookworm
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]

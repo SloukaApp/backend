@@ -7,6 +7,7 @@ from src.core.dependencies import UoWDep
 from src.core.http_errors import error_responses
 from src.modules.auth.dependencies import (
     AuthServiceDep,
+    ConfirmationQueueDep,
     PrincipalDep,
     check_confirmation,
     check_login,
@@ -37,11 +38,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     ),
 )
 async def register(
-    data: RegistrationRequest, uow: UoWDep, service: AuthServiceDep
+    data: RegistrationRequest, uow: UoWDep, service: AuthServiceDep, queue: ConfirmationQueueDep
 ) -> DeliveryResponse:
     async with uow:
-        delivery = await service.register(CreateUserInput(**data.model_dump()))
-    await service.deliver_confirmation(delivery)
+        confirmation_id = await service.register(CreateUserInput(**data.model_dump()))
+    await queue.enqueue(confirmation_id)
     return DeliveryResponse()
 
 
@@ -56,11 +57,11 @@ async def register(
     ),
 )
 async def resend(
-    data: CredentialsRequest, uow: UoWDep, service: AuthServiceDep
+    data: CredentialsRequest, uow: UoWDep, service: AuthServiceDep, queue: ConfirmationQueueDep
 ) -> DeliveryResponse:
     async with uow:
-        delivery = await service.resend_confirmation(data.email, data.password)
-    await service.deliver_confirmation(delivery)
+        confirmation_id = await service.resend_confirmation(data.email, data.password)
+    await queue.enqueue(confirmation_id)
     return DeliveryResponse()
 
 

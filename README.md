@@ -24,8 +24,12 @@ Python 3.14, FastAPI, PostgreSQL 17, Redis. Команды выполняютс�
 ## Локальный запуск
 
 Нужны Docker Compose и uv. Создайте `.env` из [.env.template](.env.template),
-задайте пароль БД и соответствующий `DB__DSN`, случайный `AUTH__JWT_SECRET`,
+задайте пароль БД и соответствующий `DB__DSN`, случайные `AUTH__JWT_SECRET`
+и `AUTH__CONFIRMATION_SECRET`,
 `PGADMIN_DEFAULT_EMAIL` и непустой `PGADMIN_DEFAULT_PASSWORD`.
+`AUTH__CONFIRMATION_SECRET` должен содержать не менее 32 символов и совпадать
+у API и воркера. Для генерации отдельного секрета используйте
+`uv run python -c 'import secrets; print(secrets.token_urlsafe(32))'`.
 
 ```bash
 uv sync
@@ -34,8 +38,8 @@ make up
 ```
 
 Make использует `docker-compose.yaml` и `docker-compose.override.yaml`:
-собирает dev-образы, запускает PostgreSQL, Redis, Mailpit, pgAdmin и API с reload.
-Migrator применяет `alembic upgrade head` перед запуском API.
+собирает dev-образы, запускает PostgreSQL, Redis, Mailpit, pgAdmin, API с reload
+и Taskiq-воркер. Migrator применяет `alembic upgrade head` перед запуском API и воркера.
 
 `make stop` останавливает сервисы, `make down` удаляет контейнеры и сети,
 сохраняя `var/`. Остальные команды: `make build`, `make logs`, `make ps`.
@@ -49,7 +53,16 @@ SMTP Mailpit — `localhost:1025`. В pgAdmin сервер БД — `database:54
 не публикует его порт. Используйте локальный Redis или дополнительный локальный
 Compose override с портом `127.0.0.1:6379:6379`. Затем поднимите PostgreSQL/Mailpit,
 примените миграции и запустите `uv run uvicorn src.main:create_app --factory
---no-proxy-headers --reload`. DSN и SMTP в `.env` должны указывать на доступные с хоста адреса.
+--no-proxy-headers --reload` и отдельный процесс
+`uv run taskiq worker src.worker.bootstrap:broker --workers 1 --max-async-tasks 4`.
+DSN в `.env` должны указывать на доступные с хоста адреса. SMTP настраивается для воркера.
+
+Регистрация и повторная отправка возвращают успех после записи задачи в Redis.
+AuthService вычисляет код из ID подтверждения и `AUTH__CONFIRMATION_SECRET`.
+Воркер передаёт код в MailService вне транзакции. При повторной выдаче задачи
+после сбоя воркер воспроизводит тот же код, пока подтверждение действует.
+При ошибке публикации API возвращает `503`, а аккаунт и запись подтверждения
+остаются в БД. Новый код можно запросить через resend после cooldown.
 
 ## Проверки
 
@@ -74,11 +87,15 @@ Push в `main` с изменениями помимо Markdown или ручно
 
 1. Проверки, сборку target `prod` и публикацию образа в GHCR с тегом SHA коммита.
 2. SSH-вход по паролю и скачивание образа по digest с временным `GITHUB_TOKEN`.
-3. Миграции из того же образа, обновление backend и ожидание healthcheck.
+3. Миграции из того же образа, обновление backend и Taskiq-воркера, ожидание запуска.
 4. Проверку HTTPS OpenAPI. При ошибке job завершается неуспешно; автоматического отката нет.
 
 Временные данные входа в GHCR удаляются после job. Compose-файлы, `deploy/`
 и `production.env` обновляются на сервере вручную; автодеплой не пересоздаёт инфраструктуру.
+Перед первым деплоем с воркером обновите оба Compose-файла и задайте
+`AUTH__CONFIRMATION_SECRET` в `production.env`.
+Коды, отправленные до перехода на HMAC, и коды от предыдущего секрета перестают
+действовать. Получить новый код можно через resend. Откат удалённые хеши не восстанавливает.
 `BACKEND_IMAGE` в серверном env пайплайн не переписывает: для ручного запуска
 указывайте актуальный digest. Ручное скачивание приватного образа требует `docker login ghcr.io`.
 

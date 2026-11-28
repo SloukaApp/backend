@@ -25,9 +25,9 @@ and are registered in `main.py`, never imported by services or workers.
 ## Registration & Email Confirmation
 
 - Provide separate registration, email-confirmation, and login endpoints. These endpoints require no access token; refresh requires only a valid refresh token.
-- Registration creates an unconfirmed account and a one-time email confirmation, without issuing access/refresh tokens. Send confirmation mail outside the DB transaction through a Protocol adapter.
+- Registration creates an unconfirmed account and reserves a one-time email confirmation, without issuing access/refresh tokens. Publish the confirmation ID through a Protocol adapter after commit. AuthService derives the code for an active reservation. After the read transaction, the Taskiq worker passes the delivery data to MailService. The worker coordinates both public services.
 - Successful confirmation automatically logs the user in: consume the confirmation, mark the email confirmed through UsersService, check the device limit, and persist the device/refresh authorization in one transaction; return the access/refresh pair after successful commit.
-- Confirmation tokens are six cryptographically random case-sensitive ASCII letters/digits, stored as SHA-256 hashes and never logged. Current configurable defaults: 900-second lifetime, 60-second resend cooldown. Resend verifies email/password and revokes earlier confirmations; changing the policy requires a separate decision.
+- Derive six case-sensitive ASCII letters/digits from HMAC-SHA256 over the confirmation ID using the dedicated confirmation secret. The API and worker use the same secret. Keep codes and their hashes out of storage and logs. Current configurable defaults: 900-second lifetime, 60-second resend cooldown, both measured from reservation. Resend verifies email/password and revokes earlier confirmations; changing the policy requires a separate decision.
 - The separate login endpoint verifies credentials and confirmed email before issuing tokens. Unconfirmed users cannot log in or access learning functions.
 
 ## Devices
@@ -38,9 +38,9 @@ and are registered in `main.py`, never imported by services or workers.
 ## Implementation Notes
 
 - Device lists include inactive history. No GET confirmation, password recovery, or account-deletion endpoint is implemented.
-- Confirmation mail contains the code and app instructions, not a link or HTTP API details. Set Date and a unique Message-ID before SMTP; retain both across retries of the same message. SMTP runs after commit: delivery failure returns 503 but leaves the account/confirmation saved; retry through resend after cooldown. SMTP retries can duplicate delivery; only the latest non-revoked code is valid.
+- Confirmation mail contains the code and app instructions, not a link or HTTP API details. MailService retains Date and Message-ID across all SMTP attempts for the same confirmation and asks the worker to re-check the code through AuthService before retrying. A redelivered task derives the same code for an active reservation. A queue publication failure returns 503 and leaves the reservation saved. Retry through resend after cooldown.
 - Registration stores the client-provided consent version; backend does not supply legal text. Confirmation returns a token pair; registration does not.
-- Account row locks through UsersService serialize issuance, refresh, resend and password changes; refresh/confirmation rows are also locked. Keep the dependency `auth → users`; HTTP auth dependencies in users do not reverse the service dependency.
+- Account row locks through UsersService serialize authorization, refresh, resend, email confirmation and password changes. Refresh also locks its token row. The confirmation endpoint locks the current confirmation row when consuming it. Keep the dependency `auth → users`; HTTP auth dependencies in users do not reverse the service dependency.
 - Rate limiting uses Redis TIME and an approximate sliding window counter: `current + previous * (1 - elapsed / window)`. Each Lua call checks all supplied budgets before incrementing them. If that call rejects the request, those counters and TTLs are unchanged. TTL is two windows after the last increment. Keys share `{rate_limit}` and use `REDIS__KEY_PREFIX`. Resend consumes only the shared API IP budget.
 - Retry-After is rounded up to at least one second; competing requests may consume the recovered budget. Redis counters are independent of DB rollback; Redis AOF everysec can lose recent increments on failure.
 - Client IP comes from the application's single ProxyHeadersMiddleware, restricted by `APP__TRUSTED_PROXIES`. Keep Uvicorn `--no-proxy-headers` to avoid a second forwarding-trust layer.

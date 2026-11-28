@@ -3,7 +3,7 @@ import logging
 import logging.config
 from typing import Any
 
-from src.core.middleware.request_id import current_request_id
+from src.core.request_context import current_request_id
 
 
 class JsonFormatter(logging.Formatter):

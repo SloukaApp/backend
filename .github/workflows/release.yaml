@@ -42,7 +42,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    name: Deploy API
+    name: Deploy API and worker
     needs: publish
     if: vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
@@ -81,9 +81,9 @@ jobs:
               docker compose --project-name slouka --env-file production.env \
                 -f docker-compose.yaml -f docker-compose.prod.yaml "$@"
             }
-            compose pull backend migrator
+            compose pull backend worker migrator
             compose run --rm --no-deps migrator
-            compose up -d --no-deps --wait --wait-timeout 120 backend
+            compose up -d --no-deps --wait --wait-timeout 120 backend worker
             curl --fail --silent --show-error --retry 5 --retry-delay 3 \
               --connect-timeout 5 --max-time 15 \
               https://api.slouka.csmmark.me/api/v1/openapi.json -o /dev/null

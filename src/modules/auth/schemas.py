@@ -48,7 +48,7 @@ class TokenResponse(BaseModel):
 
 
 class DeliveryResponse(BaseModel):
-    detail: str = "Confirmation email sent"
+    detail: str = "Confirmation email queued"
 
 
 class DeviceResponse(BaseModel):

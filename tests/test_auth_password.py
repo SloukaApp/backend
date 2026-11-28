@@ -37,8 +37,10 @@ async def password_api(
         {
             "db": {"dsn": dsn},
             "redis": {"dsn": "redis://localhost:6379"},
-            "auth": {"jwt_secret": token_urlsafe(48)},
-            "smtp": {"host": "localhost", "from_email": "noreply@example.test"},
+            "auth": {
+                "jwt_secret": token_urlsafe(48),
+                "confirmation_secret": token_urlsafe(32),
+            },
         }
     )
     monkeypatch.setattr(main, "get_settings", lambda: settings)

@@ -15,12 +15,22 @@ async def add_confirmation(session: AsyncSession, confirmation: EmailConfirmatio
     await flush(session)
 
 
-async def get_confirmation(
-    session: AsyncSession, user_id: UUID, digest: str
+async def get_confirmation_by_id(
+    session: AsyncSession, confirmation_id: UUID
+) -> EmailConfirmation | None:
+    return await session.get(EmailConfirmation, confirmation_id)
+
+
+async def get_current_confirmation(
+    session: AsyncSession, user_id: UUID
 ) -> EmailConfirmation | None:
     return await session.scalar(
         select(EmailConfirmation)
-        .where(EmailConfirmation.user_id == user_id, EmailConfirmation.token_hash == digest)
+        .where(
+            EmailConfirmation.user_id == user_id,
+            EmailConfirmation.consumed_at.is_(None),
+            EmailConfirmation.revoked_at.is_(None),
+        )
         .with_for_update()
     )
 
@@ -102,7 +112,6 @@ async def flush(session: AsyncSession) -> None:
             "uq_refresh_tokens_current_device",
             "uq_refresh_tokens_token_hash",
             "uq_email_confirmations_current_user",
-            "uq_email_confirmations_token_hash",
         }:
             raise AuthorizationConflictError() from exc
         if state == "23503" and constraint in {

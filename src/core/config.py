@@ -50,6 +50,7 @@ class RedisConfig(BaseModel):
 
 class AuthConfig(BaseModel):
     jwt_secret: SecretStr
+    confirmation_secret: SecretStr = Field(min_length=32)
     confirmation_ttl_seconds: int = Field(default=900, gt=0)
     confirmation_resend_cooldown_seconds: int = Field(default=60, ge=0)
     jwt_algorithm: str = "HS256"
@@ -150,26 +151,6 @@ class LoggingConfig(BaseModel):
         return normalized
 
 
-class Settings(BaseSettings):
-    app: AppConfig = Field(default_factory=AppConfig)
-    db: PostgresConfig
-    redis: RedisConfig
-    auth: AuthConfig
-    smtp: SmtpConfig
-    http: HttpClientConfig = Field(default_factory=HttpClientConfig)
-    cache: CacheConfig = Field(default_factory=CacheConfig)
-    verbum: VerbumConfig = Field(default_factory=VerbumConfig)
-    rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
-    logging: LoggingConfig = Field(default_factory=LoggingConfig)
-
-    model_config = SettingsConfigDict(
-        env_file=ENV_FILE,
-        env_file_encoding="utf-8",
-        env_nested_delimiter="__",
-        extra="ignore",
-    )
-
-
 class DatabaseSettings(BaseSettings):
     db: PostgresConfig
 
@@ -181,6 +162,29 @@ class DatabaseSettings(BaseSettings):
     )
 
 
+class ProcessSettings(DatabaseSettings):
+    redis: RedisConfig
+    auth: AuthConfig
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+
+
+class Settings(ProcessSettings):
+    app: AppConfig = Field(default_factory=AppConfig)
+    http: HttpClientConfig = Field(default_factory=HttpClientConfig)
+    cache: CacheConfig = Field(default_factory=CacheConfig)
+    verbum: VerbumConfig = Field(default_factory=VerbumConfig)
+    rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
+
+
+class WorkerSettings(ProcessSettings):
+    smtp: SmtpConfig
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()  # pyright: ignore[reportCallIssue]
+
+
+@lru_cache
+def get_worker_settings() -> WorkerSettings:
+    return WorkerSettings()  # pyright: ignore[reportCallIssue]

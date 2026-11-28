@@ -153,5 +153,6 @@ uv run alembic check
 
 ## Workflow Rules
 
+- Follow Conventional Commits for every commit message. Always create commits with `git commit -s` to add the `Signed-off-by` trailer.
 - Do not report completion with lint/type failures outstanding.
 - Where these rules conflict with observed code, stop and ask — do not silently pick a side.

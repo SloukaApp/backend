@@ -15,13 +15,14 @@ from src.core.middleware.rate_limit import RateLimitMiddleware
 from src.core.middleware.request_id import RequestIdMiddleware
 from src.core.redis import build_redis
 from src.modules.auth import http_errors as auth_http
-from src.modules.auth.adapters import SmtpConfirmationMailer
 from src.modules.auth.router import router as auth_router
 from src.modules.search import http_errors as search_http
 from src.modules.search.router import router as search_router
 from src.modules.search.verbum import VerbumClient
 from src.modules.users import http_errors as users_http
 from src.modules.users.router import router as users_router
+from src.worker.broker import build_broker
+from src.worker.queue import TaskiqConfirmationQueue
 
 
 @asynccontextmanager
@@ -33,9 +34,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         redis = build_redis(settings.redis)
         cleanup.push_async_callback(redis.aclose)
 
-        mailer = SmtpConfirmationMailer(settings.smtp)
-        cleanup.push_async_callback(mailer.close)
-        app.state.confirmation_mailer = mailer
+        broker = build_broker(settings.redis)
+        cleanup.push_async_callback(broker.shutdown)
+        app.state.confirmation_queue = TaskiqConfirmationQueue(
+            broker, settings.redis.socket_timeout
+        )
 
         app.state.session_factory = build_session_factory(engine)
         app.state.redis = redis

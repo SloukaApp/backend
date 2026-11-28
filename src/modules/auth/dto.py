@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 
 class ConfirmationDelivery(BaseModel):
     email: str = Field(repr=False)
-    token: str = Field(repr=False)
+    code: str = Field(repr=False)
+    created_at: datetime
+    expires_at: datetime
 
 
 class TokenPair(BaseModel):

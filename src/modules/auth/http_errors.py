@@ -5,13 +5,13 @@ from src.core.http_errors import ExceptionHandlers, error_response
 from src.modules.auth.errors import (
     AuthorizationConflictError,
     ConfirmationConflictError,
+    ConfirmationEnqueueError,
     DeviceLimitError,
     DeviceNotFoundError,
     EmailUnconfirmedError,
     InvalidAccessError,
     InvalidConfirmationError,
     InvalidRefreshError,
-    MailDeliveryError,
 )
 
 
@@ -53,10 +53,10 @@ async def handle_confirmation_conflict(_request: Request, _exc: Exception) -> JS
     )
 
 
-async def handle_mail_delivery(_request: Request, _exc: Exception) -> JSONResponse:
+async def handle_confirmation_enqueue(_request: Request, _exc: Exception) -> JSONResponse:
     return error_response(
         status.HTTP_503_SERVICE_UNAVAILABLE,
-        "Confirmation saved but email delivery failed; "
+        "Confirmation saved but email could not be queued; "
         "request a new confirmation after the cooldown",
     )
 
@@ -70,5 +70,5 @@ EXCEPTION_HANDLERS: ExceptionHandlers = {
     InvalidAccessError: handle_invalid_access,
     InvalidConfirmationError: handle_invalid_confirmation,
     InvalidRefreshError: handle_invalid_refresh,
-    MailDeliveryError: handle_mail_delivery,
+    ConfirmationEnqueueError: handle_confirmation_enqueue,
 }

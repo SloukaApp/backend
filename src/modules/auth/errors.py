@@ -29,7 +29,7 @@ class ConfirmationConflictError(ApplicationError):
     pass
 
 
-class MailDeliveryError(ApplicationError):
+class ConfirmationEnqueueError(ApplicationError):
     pass
 
 

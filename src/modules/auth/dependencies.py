@@ -5,7 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.core.dependencies import RedisDep, SettingsDep, UoWDep, get_client_ip
 from src.core.rate_limit import RateLimiter
-from src.modules.auth.adapters import ConfirmationMailer
+from src.modules.auth.adapters import ConfirmationQueue
 from src.modules.auth.dto import Principal
 from src.modules.auth.errors import EmailUnconfirmedError, InvalidAccessError
 from src.modules.auth.rate_limit import AuthRateLimits
@@ -39,13 +39,18 @@ def get_auth_service(
     uow: UoWDep,
     users: UsersServiceDep,
     settings: SettingsDep,
-    request: Request,
 ) -> AuthService:
-    mailer = cast(ConfirmationMailer, request.app.state.confirmation_mailer)
-    return AuthService(uow, users, settings.auth, mailer)
+    return AuthService(uow, users, settings.auth)
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+
+
+def get_confirmation_queue(request: Request) -> ConfirmationQueue:
+    return cast(ConfirmationQueue, request.app.state.confirmation_queue)
+
+
+ConfirmationQueueDep = Annotated[ConfirmationQueue, Depends(get_confirmation_queue)]
 
 
 async def get_principal(

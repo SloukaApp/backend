@@ -50,7 +50,6 @@ class EmailConfirmation(BaseModel):
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid7)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     created_at: Mapped[datetime]
     expires_at: Mapped[datetime]
     consumed_at: Mapped[datetime | None]
