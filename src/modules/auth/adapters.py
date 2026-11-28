@@ -11,6 +11,10 @@ class ConfirmationQueue(Protocol):
     async def enqueue(self, confirmation_id: UUID) -> None: ...
 
 
+class PasswordResetQueue(Protocol):
+    async def enqueue_password_reset(self, reset_id: UUID) -> None: ...
+
+
 def decode_access(token: str, secret: str) -> tuple[UUID, UUID]:
     try:
         claims = jwt.decode(

@@ -1,17 +1,25 @@
 import logging
 from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
-from uuid import UUID
+from uuid import UUID, uuid7
 
 from src.core.config import AuthConfig
 from src.core.uow import UnitOfWork
 from src.modules.auth import repository
 from src.modules.auth.adapters import decode_access
-from src.modules.auth.domain import confirmation_token, encode_access, random_token, token_hash
+from src.modules.auth.domain import (
+    confirmation_token,
+    encode_access,
+    password_reset_code,
+    random_token,
+    token_hash,
+)
 from src.modules.auth.dto import (
     ConfirmationDelivery,
     DeviceInfo,
     DevicePage,
+    PasswordResetDelivery,
+    PasswordResetInput,
     Principal,
     TokenPair,
 )
@@ -22,9 +30,10 @@ from src.modules.auth.errors import (
     EmailUnconfirmedError,
     InvalidAccessError,
     InvalidConfirmationError,
+    InvalidPasswordResetError,
     InvalidRefreshError,
 )
-from src.modules.auth.models import Device, EmailConfirmation, RefreshToken
+from src.modules.auth.models import Device, EmailConfirmation, PasswordReset, RefreshToken
 from src.modules.users.dto import CreateUserInput, UserState
 from src.modules.users.errors import InvalidCredentialsError, UserNotFoundError
 from src.modules.users.service import UsersService
@@ -154,7 +163,99 @@ class AuthService:
         """Raise InvalidAccessError or InvalidCredentialsError; revoke all refresh atomically."""
         await self._authenticated_account(user_id, for_update=True)
         await self.users.change_password(user_id, current_password, new_password)
-        await repository.revoke_all(self.uow.session, user_id, datetime.now(UTC))
+        now = datetime.now(UTC)
+        await repository.revoke_password_resets(self.uow.session, user_id, now)
+        await repository.revoke_all(self.uow.session, user_id, now)
+
+    async def request_password_reset(self, email: str) -> UUID:
+        """Reserve a reset or return an unused delivery ID for a request ineligible for mail."""
+        reset_id = uuid7()
+        try:
+            account = await self.users.get_account_by_email(email, for_update=True)
+        except UserNotFoundError:
+            return reset_id
+        if not account.email_confirmed:
+            return reset_id
+
+        now = datetime.now(UTC)
+        latest = await repository.latest_password_reset(self.uow.session, account.id)
+        cooldown = timedelta(seconds=self.config.password_reset_cooldown_seconds)
+        if latest is not None and latest.created_at + cooldown > now:
+            return reset_id
+
+        await repository.revoke_password_resets(self.uow.session, account.id, now)
+        await repository.add_password_reset(
+            self.uow.session,
+            PasswordReset(
+                id=reset_id,
+                user_id=account.id,
+                created_at=now,
+                expires_at=now + timedelta(seconds=self.config.password_reset_ttl_seconds),
+            ),
+        )
+        return reset_id
+
+    async def prepare_password_reset_delivery(self, reset_id: UUID) -> PasswordResetDelivery | None:
+        """Return the deterministic code for an active reset of a confirmed account."""
+        prepared = await self._password_reset_for_delivery(reset_id)
+        if prepared is None:
+            return None
+        reset, account = prepared
+        return PasswordResetDelivery(
+            email=account.email,
+            code=self._password_reset_code(reset.id),
+            created_at=reset.created_at,
+            expires_at=reset.expires_at,
+        )
+
+    async def password_reset_delivery_is_current(self, reset_id: UUID) -> bool:
+        """Check whether the reset can still be delivered."""
+        return await self._password_reset_for_delivery(reset_id) is not None
+
+    async def _password_reset_for_delivery(
+        self, reset_id: UUID
+    ) -> tuple[PasswordReset, UserState] | None:
+        reset = await repository.get_password_reset(self.uow.session, reset_id)
+        if reset is None or not self._password_reset_is_active(reset, datetime.now(UTC)):
+            return None
+        try:
+            account = await self.users.get_account(reset.user_id)
+        except UserNotFoundError:
+            return None
+        if not account.email_confirmed:
+            return None
+        return reset, account
+
+    async def confirm_password_reset(self, data: PasswordResetInput) -> None:
+        """Raise InvalidPasswordResetError for an ineligible account or invalid code."""
+        try:
+            account = await self.users.get_account_by_email(data.email, for_update=True)
+        except UserNotFoundError as exc:
+            raise InvalidPasswordResetError() from exc
+        if not account.email_confirmed:
+            raise InvalidPasswordResetError()
+
+        reset = await repository.latest_password_reset(self.uow.session, account.id)
+        now = datetime.now(UTC)
+        if (
+            reset is None
+            or not self._password_reset_is_active(reset, now)
+            or not data.code.isascii()
+            or not compare_digest(data.code, self._password_reset_code(reset.id))
+        ):
+            raise InvalidPasswordResetError()
+
+        await self.users.reset_password(account.id, data.new_password)
+        reset.consumed_at = now
+        await repository.flush(self.uow.session)
+        await repository.revoke_all(self.uow.session, account.id, now)
+
+    def _password_reset_code(self, reset_id: UUID) -> str:
+        return password_reset_code(reset_id, self.config.confirmation_secret.get_secret_value())
+
+    @staticmethod
+    def _password_reset_is_active(reset: PasswordReset, now: datetime) -> bool:
+        return reset.consumed_at is None and reset.revoked_at is None and reset.expires_at > now
 
     async def register(self, data: CreateUserInput) -> UUID:
         """Raise EmailAlreadyExistsError or AuthorizationConflictError."""

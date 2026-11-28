@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.modules.users.dto import Email
+from src.modules.users.dto import Email, Password
 
 
 class RegistrationRequest(BaseModel):
@@ -38,6 +38,20 @@ class RefreshRequest(BaseModel):
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(repr=False)
     new_password: str = Field(min_length=8, repr=False)
+
+
+class PasswordResetRequest(BaseModel):
+    email: Email = Field(repr=False)
+
+
+class PasswordResetConfirm(BaseModel):
+    email: Email = Field(repr=False)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^[A-Za-z0-9]{6}$", repr=False)
+    new_password: Password = Field(repr=False)
+
+
+class PasswordResetResponse(BaseModel):
+    detail: str = "A reset code will be sent if the address is eligible"
 
 
 class TokenResponse(BaseModel):

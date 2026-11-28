@@ -35,9 +35,17 @@ and are registered in `main.py`, never imported by services or workers.
 - Own `devices` and `refresh_tokens`; a device represents an account authorization session. Each login or successful confirmation creates a server-generated device ID. Refresh continues the same session.
 - Count active devices by valid authorization, not historical refresh rows. Push subscription data belongs to notifications; disabling/revoking push never logs a device out.
 
+## Password Reset
+
+- Auth owns the reset workflow and reservations. The dependency direction is `auth → users`. Only UsersService writes the new password hash. Use the account row lock for reservation and consumption, in the same order as login, refresh and password change.
+- Both reset endpoints are public. For a syntactically valid request, publish an opaque UUID after commit and return the same `202` for confirmed, unconfirmed, missing and cooldown-limited accounts. Only an eligible account outside the cooldown gets a reservation. The worker skips UUIDs without an active reservation. A publication failure returns the same `503` for all cases. A committed reservation is eligible for replacement after cooldown.
+- Reset codes are six case-sensitive ASCII letters/digits derived using the confirmation secret and a reset-specific HMAC input. Only reservation metadata is stored. Configurable defaults are 900 seconds of validity and 60 seconds between reservations. A new reservation revokes the previous one. The worker checks reservation and account state before sending and before each retry.
+- Reset requests use the shared API IP budget. Reset confirmation has separate budgets of 20 checks per IP and 5 per normalized email across all IPs, per approximate 900-second window by default. Reissuing a code never resets those budgets. Reject over-limit requests with `429` and `Retry-After`.
+- An invalid, expired, revoked or consumed code yields the same `401`. A successful reset consumes the code, changes the password and revokes all refresh tokens in one transaction. Return `204` and let the client log in with the new password. An authenticated password change also revokes pending reset codes.
+
 ## Implementation Notes
 
-- Device lists include inactive history. No GET confirmation, password recovery, or account-deletion endpoint is implemented.
+- Device lists include inactive history. There are no GET confirmation or account-deletion endpoints.
 - Confirmation mail contains the code and app instructions, not a link or HTTP API details. MailService retains Date and Message-ID across all SMTP attempts for the same confirmation and asks the worker to re-check the code through AuthService before retrying. A redelivered task derives the same code for an active reservation. A queue publication failure returns 503 and leaves the reservation saved. Retry through resend after cooldown.
 - Registration stores the client-provided consent version; backend does not supply legal text. Confirmation returns a token pair; registration does not.
 - Account row locks through UsersService serialize authorization, refresh, resend, email confirmation and password changes. Refresh also locks its token row. The confirmation endpoint locks the current confirmation row when consuming it. Keep the dependency `auth → users`; HTTP auth dependencies in users do not reverse the service dependency.

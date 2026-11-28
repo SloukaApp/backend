@@ -54,3 +54,24 @@ class EmailConfirmation(BaseModel):
     expires_at: Mapped[datetime]
     consumed_at: Mapped[datetime | None]
     revoked_at: Mapped[datetime | None]
+
+
+class PasswordReset(BaseModel):
+    __tablename__ = "password_resets"
+    __table_args__ = (
+        CheckConstraint("expires_at > created_at", name="reset_expiry"),
+        Index("ix_password_resets_user_created", "user_id", "created_at"),
+        Index(
+            "uq_password_resets_current_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("consumed_at IS NULL AND revoked_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime]
+    expires_at: Mapped[datetime]
+    consumed_at: Mapped[datetime | None]
+    revoked_at: Mapped[datetime | None]

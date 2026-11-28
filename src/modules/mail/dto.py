@@ -4,7 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-class ConfirmationEmail(BaseModel):
+class CodeEmail(BaseModel):
     message_id: UUID
     email: str = Field(repr=False)
     code: str = Field(repr=False)

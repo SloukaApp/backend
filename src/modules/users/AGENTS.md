@@ -15,6 +15,7 @@ and are registered in `main.py`, never imported by services or workers.
 
 - Passwords require at least 8 characters. Do not impose alphabet, case, digit, or special-character composition rules; special characters are allowed. Hash passwords with Argon2. Never persist, return, or log plaintext passwords.
 - Keep normalization and password handling inside this module. Database constraints enforce uniqueness; a prior lookup alone does not prevent concurrent duplicates.
+- `AuthService` calls `UsersService.reset_password` within the shared operation after verifying the one-time recovery code. UsersService validates and hashes the new password; auth consumes the code and revokes refresh tokens.
 
 ## Account Data
 

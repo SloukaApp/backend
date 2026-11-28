@@ -30,3 +30,14 @@ class AuthRateLimits:
                 ),
             ]
         )
+
+    async def password_reset(self, email: str) -> None:
+        await self.limiter.check_many(
+            [
+                (
+                    f"password_reset:email:{email}",
+                    self.config.password_reset_email_window_seconds,
+                    self.config.password_reset_email_max_attempts,
+                ),
+            ]
+        )

@@ -10,11 +10,16 @@ from src import main
 from src.core.config import AppConfig, RedisConfig, Settings, get_settings
 from src.core.dependencies import get_uow
 from src.modules.auth.dependencies import get_auth_service
-from src.modules.auth.errors import InvalidAccessError, InvalidConfirmationError
+from src.modules.auth.errors import (
+    InvalidAccessError,
+    InvalidConfirmationError,
+    InvalidPasswordResetError,
+)
 
 API = "/api/v1"
 LOGIN = f"{API}/auth/login"
 CONFIRM = f"{API}/auth/confirm-email"
+RESET_CONFIRM = f"{API}/auth/password-reset/confirm"
 ORIGIN = "http://localhost:8000"
 IP = "192.0.2.10"
 OTHER_IP = "192.0.2.20"
@@ -36,6 +41,7 @@ async def api(
     auth = SimpleNamespace(
         login=AsyncMock(side_effect=InvalidAccessError),
         confirm_email=AsyncMock(side_effect=InvalidConfirmationError),
+        confirm_password_reset=AsyncMock(side_effect=InvalidPasswordResetError),
     )
     app.dependency_overrides[get_auth_service] = lambda: auth
     evaluate = AsyncMock(return_value=0)
@@ -90,6 +96,38 @@ async def test_auth_budgets_are_independent_of_ip_checks_and_each_other(
         (2, f"{PREFIX}api:ip:{IP}", f"{PREFIX}confirmation:ip:{IP}", 60, 60, 900, 20),
         (1, f"{PREFIX}confirmation:email:{email}", 900, 5),
         (2, f"{PREFIX}api:ip:{OTHER_IP}", f"{PREFIX}confirmation:ip:{OTHER_IP}", 60, 60, 900, 20),
+        (1, f"{PREFIX}confirmation:email:{email}", 900, 5),
+    ]
+
+
+async def test_password_reset_uses_its_own_ip_and_account_limits(
+    api: tuple[httpx.AsyncClient, AsyncMock],
+) -> None:
+    client, evaluate = api
+    reset = {"email": " Reader@Example.TEST ", "code": "Abc123", "new_password": "new-password"}
+    evaluate.side_effect = [0, 0, 0, 19, 23, 0, 0]
+
+    assert (await client.post(RESET_CONFIRM, json=reset)).status_code == 401
+    email_blocked = await client.post(
+        RESET_CONFIRM, json=reset, headers={"X-Forwarded-For": OTHER_IP}
+    )
+    assert email_blocked.status_code == 429
+    assert email_blocked.headers["Retry-After"] == "19"
+    ip_blocked = await client.post(RESET_CONFIRM, json={})
+    assert ip_blocked.status_code == 429
+    assert ip_blocked.headers["Retry-After"] == "23"
+    assert (
+        await client.post(CONFIRM, json={"email": reset["email"], "token": "Abc123"})
+    ).status_code == 401
+
+    email = "reader@example.test"
+    assert [call.args[1:] for call in evaluate.await_args_list] == [
+        (2, f"{PREFIX}api:ip:{IP}", f"{PREFIX}password_reset:ip:{IP}", 60, 60, 900, 20),
+        (1, f"{PREFIX}password_reset:email:{email}", 900, 5),
+        (2, f"{PREFIX}api:ip:{OTHER_IP}", f"{PREFIX}password_reset:ip:{OTHER_IP}", 60, 60, 900, 20),
+        (1, f"{PREFIX}password_reset:email:{email}", 900, 5),
+        (2, f"{PREFIX}api:ip:{IP}", f"{PREFIX}password_reset:ip:{IP}", 60, 60, 900, 20),
+        (2, f"{PREFIX}api:ip:{IP}", f"{PREFIX}confirmation:ip:{IP}", 60, 60, 900, 20),
         (1, f"{PREFIX}confirmation:email:{email}", 900, 5),
     ]
 

@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.modules.auth.errors import AuthorizationConflictError
-from src.modules.auth.models import Device, EmailConfirmation, RefreshToken
+from src.modules.auth.models import Device, EmailConfirmation, PasswordReset, RefreshToken
 from src.modules.users.errors import UserNotFoundError
 
 
@@ -51,6 +51,36 @@ async def revoke_confirmations(session: AsyncSession, user_id: UUID, now: dateti
             EmailConfirmation.user_id == user_id,
             EmailConfirmation.consumed_at.is_(None),
             EmailConfirmation.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+
+
+async def add_password_reset(session: AsyncSession, reset: PasswordReset) -> None:
+    session.add(reset)
+    await flush(session)
+
+
+async def get_password_reset(session: AsyncSession, reset_id: UUID) -> PasswordReset | None:
+    return await session.get(PasswordReset, reset_id)
+
+
+async def latest_password_reset(session: AsyncSession, user_id: UUID) -> PasswordReset | None:
+    return await session.scalar(
+        select(PasswordReset)
+        .where(PasswordReset.user_id == user_id)
+        .order_by(PasswordReset.created_at.desc(), PasswordReset.id.desc())
+        .limit(1)
+    )
+
+
+async def revoke_password_resets(session: AsyncSession, user_id: UUID, now: datetime) -> None:
+    await session.execute(
+        update(PasswordReset)
+        .where(
+            PasswordReset.user_id == user_id,
+            PasswordReset.consumed_at.is_(None),
+            PasswordReset.revoked_at.is_(None),
         )
         .values(revoked_at=now)
     )
@@ -112,11 +142,13 @@ async def flush(session: AsyncSession) -> None:
             "uq_refresh_tokens_current_device",
             "uq_refresh_tokens_token_hash",
             "uq_email_confirmations_current_user",
+            "uq_password_resets_current_user",
         }:
             raise AuthorizationConflictError() from exc
         if state == "23503" and constraint in {
             "fk_devices_user_id_users",
             "fk_email_confirmations_user_id_users",
+            "fk_password_resets_user_id_users",
         }:
             raise UserNotFoundError() from exc
         if state == "23503" and constraint == "fk_refresh_tokens_device_id_devices":
@@ -124,6 +156,7 @@ async def flush(session: AsyncSession) -> None:
         if state == "23514" and constraint in {
             "ck_refresh_tokens_refresh_expiry",
             "ck_email_confirmations_confirmation_expiry",
+            "ck_password_resets_reset_expiry",
         }:
             raise AuthorizationConflictError() from exc
         raise

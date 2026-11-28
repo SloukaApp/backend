@@ -22,7 +22,7 @@ from src.modules.search.verbum import VerbumClient
 from src.modules.users import http_errors as users_http
 from src.modules.users.router import router as users_router
 from src.worker.broker import build_broker
-from src.worker.queue import TaskiqConfirmationQueue
+from src.worker.queue import TaskiqAuthMailQueue
 
 
 @asynccontextmanager
@@ -36,9 +36,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
         broker = build_broker(settings.redis)
         cleanup.push_async_callback(broker.shutdown)
-        app.state.confirmation_queue = TaskiqConfirmationQueue(
-            broker, settings.redis.socket_timeout
-        )
+        mail_queue = TaskiqAuthMailQueue(broker, settings.redis.socket_timeout)
+        app.state.confirmation_queue = mail_queue
+        app.state.password_reset_queue = mail_queue
 
         app.state.session_factory = build_session_factory(engine)
         app.state.redis = redis

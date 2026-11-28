@@ -30,6 +30,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 config.confirmation_ip_window_seconds,
                 config.confirmation_ip_max_attempts,
             ),
+            ("POST", f"{API_V1_PREFIX}/auth/password-reset/confirm"): (
+                "password_reset:ip",
+                config.password_reset_ip_window_seconds,
+                config.password_reset_ip_max_attempts,
+            ),
         }
         # OpenAPI also serves as the deployment health probe.
         self.exempt_routes = {

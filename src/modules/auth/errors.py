@@ -13,6 +13,10 @@ class InvalidConfirmationError(ApplicationError):
     pass
 
 
+class InvalidPasswordResetError(ApplicationError):
+    pass
+
+
 class EmailUnconfirmedError(ApplicationError):
     pass
 
@@ -30,6 +34,10 @@ class ConfirmationConflictError(ApplicationError):
 
 
 class ConfirmationEnqueueError(ApplicationError):
+    pass
+
+
+class PasswordResetEnqueueError(ApplicationError):
     pass
 
 

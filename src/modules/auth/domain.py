@@ -13,8 +13,16 @@ def random_token() -> str:
 
 
 def confirmation_token(confirmation_id: UUID, secret: str) -> str:
+    return _email_code(confirmation_id.bytes, secret)
+
+
+def password_reset_code(reset_id: UUID, secret: str) -> str:
+    return _email_code(b"password-reset:" + reset_id.bytes, secret)
+
+
+def _email_code(payload: bytes, secret: str) -> str:
     alphabet = string.ascii_letters + string.digits
-    digest = hmac.digest(secret.encode(), confirmation_id.bytes, "sha256")
+    digest = hmac.digest(secret.encode(), payload, "sha256")
     value = int.from_bytes(digest, "big")
     characters: list[str] = []
     for _ in range(6):

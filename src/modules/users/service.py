@@ -48,9 +48,11 @@ class UsersService:
             raise InvalidCredentialsError
         return self._state(user)
 
-    async def get_account_by_email(self, email: str) -> UserState:
-        """Raise UserNotFoundError for an absent normalized email."""
-        user = await repository.find_by_email(self.uow.session, normalize_email(email))
+    async def get_account_by_email(self, email: str, *, for_update: bool = False) -> UserState:
+        """Raise UserNotFoundError; for_update locks the matched account row."""
+        user = await repository.find_by_email(
+            self.uow.session, normalize_email(email), for_update=for_update
+        )
         if user is None:
             raise UserNotFoundError()
         return self._state(user)
@@ -75,6 +77,19 @@ class UsersService:
         user = await self._get(user_id, for_update=True)
         if not self._passwords.verify(current_password, user.password_hash):
             raise InvalidCredentialsError
+        await self._set_password(user, new_password)
+
+    async def reset_password(self, user_id: UUID, new_password: str) -> None:
+        """Set the password after auth verifies recovery.
+
+        Raise UserNotFoundError or InvalidPasswordError.
+        """
+        if len(new_password) < 8:
+            raise InvalidPasswordError
+        user = await self._get(user_id, for_update=True)
+        await self._set_password(user, new_password)
+
+    async def _set_password(self, user: User, new_password: str) -> None:
         user.password_hash = self._passwords.hash(new_password)
         await repository.flush(self.uow.session)
 

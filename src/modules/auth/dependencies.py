@@ -5,11 +5,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from src.core.dependencies import RedisDep, SettingsDep, UoWDep, get_client_ip
 from src.core.rate_limit import RateLimiter
-from src.modules.auth.adapters import ConfirmationQueue
+from src.modules.auth.adapters import ConfirmationQueue, PasswordResetQueue
 from src.modules.auth.dto import Principal
 from src.modules.auth.errors import EmailUnconfirmedError, InvalidAccessError
 from src.modules.auth.rate_limit import AuthRateLimits
-from src.modules.auth.schemas import ConfirmationRequest, CredentialsRequest
+from src.modules.auth.schemas import ConfirmationRequest, CredentialsRequest, PasswordResetConfirm
 from src.modules.auth.service import AuthService
 from src.modules.users.dependencies import UsersServiceDep
 from src.modules.users.dto import UserState
@@ -35,6 +35,10 @@ async def check_login(data: CredentialsRequest, ip: ClientIPDep, limits: RateLim
     await limits.login(data.email, ip)
 
 
+async def check_password_reset(data: PasswordResetConfirm, limits: RateLimitsDep) -> None:
+    await limits.password_reset(data.email)
+
+
 def get_auth_service(
     uow: UoWDep,
     users: UsersServiceDep,
@@ -51,6 +55,13 @@ def get_confirmation_queue(request: Request) -> ConfirmationQueue:
 
 
 ConfirmationQueueDep = Annotated[ConfirmationQueue, Depends(get_confirmation_queue)]
+
+
+def get_password_reset_queue(request: Request) -> PasswordResetQueue:
+    return cast(PasswordResetQueue, request.app.state.password_reset_queue)
+
+
+PasswordResetQueueDep = Annotated[PasswordResetQueue, Depends(get_password_reset_queue)]
 
 
 async def get_principal(

@@ -3,8 +3,23 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from src.modules.users.dto import Email, Password
+
+
+class PasswordResetInput(BaseModel):
+    email: Email = Field(repr=False)
+    code: str = Field(repr=False)
+    new_password: Password = Field(repr=False)
+
 
 class ConfirmationDelivery(BaseModel):
+    email: str = Field(repr=False)
+    code: str = Field(repr=False)
+    created_at: datetime
+    expires_at: datetime
+
+
+class PasswordResetDelivery(BaseModel):
     email: str = Field(repr=False)
     code: str = Field(repr=False)
     created_at: datetime

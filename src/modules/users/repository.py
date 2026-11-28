@@ -17,8 +17,13 @@ async def find_by_id(
     return await session.scalar(statement)
 
 
-async def find_by_email(session: AsyncSession, email: str) -> User | None:
-    return await session.scalar(select(User).where(User.email == email))
+async def find_by_email(
+    session: AsyncSession, email: str, *, for_update: bool = False
+) -> User | None:
+    statement = select(User).where(User.email == email)
+    if for_update:
+        statement = statement.with_for_update().execution_options(populate_existing=True)
+    return await session.scalar(statement)
 
 
 async def flush(session: AsyncSession) -> None:

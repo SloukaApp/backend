@@ -11,7 +11,9 @@ from src.modules.auth.errors import (
     EmailUnconfirmedError,
     InvalidAccessError,
     InvalidConfirmationError,
+    InvalidPasswordResetError,
     InvalidRefreshError,
+    PasswordResetEnqueueError,
 )
 
 
@@ -33,6 +35,16 @@ async def handle_invalid_refresh(_request: Request, _exc: Exception) -> JSONResp
 
 async def handle_invalid_confirmation(_request: Request, _exc: Exception) -> JSONResponse:
     return error_response(status.HTTP_401_UNAUTHORIZED, "Invalid email confirmation")
+
+
+async def handle_invalid_password_reset(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_401_UNAUTHORIZED, "Invalid password reset code")
+
+
+async def handle_password_reset_enqueue(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(
+        status.HTTP_503_SERVICE_UNAVAILABLE, "Password reset temporarily unavailable"
+    )
 
 
 async def handle_email_unconfirmed(_request: Request, _exc: Exception) -> JSONResponse:
@@ -69,6 +81,8 @@ EXCEPTION_HANDLERS: ExceptionHandlers = {
     EmailUnconfirmedError: handle_email_unconfirmed,
     InvalidAccessError: handle_invalid_access,
     InvalidConfirmationError: handle_invalid_confirmation,
+    InvalidPasswordResetError: handle_invalid_password_reset,
     InvalidRefreshError: handle_invalid_refresh,
     ConfirmationEnqueueError: handle_confirmation_enqueue,
+    PasswordResetEnqueueError: handle_password_reset_enqueue,
 }

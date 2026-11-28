@@ -53,6 +53,8 @@ class AuthConfig(BaseModel):
     confirmation_secret: SecretStr = Field(min_length=32)
     confirmation_ttl_seconds: int = Field(default=900, gt=0)
     confirmation_resend_cooldown_seconds: int = Field(default=60, ge=0)
+    password_reset_ttl_seconds: int = Field(default=900, gt=0)
+    password_reset_cooldown_seconds: int = Field(default=60, ge=0)
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = ACCESS_TOKEN_TTL_MINUTES
     refresh_token_ttl_days: int = REFRESH_TOKEN_TTL_DAYS
@@ -137,6 +139,10 @@ class RateLimitConfig(BaseModel):
     confirmation_email_max_attempts: int = Field(default=5, ge=1)
     confirmation_ip_window_seconds: int = Field(default=900, ge=1)
     confirmation_ip_max_attempts: int = Field(default=20, ge=1)
+    password_reset_email_window_seconds: int = Field(default=900, ge=1)
+    password_reset_email_max_attempts: int = Field(default=5, ge=1)
+    password_reset_ip_window_seconds: int = Field(default=900, ge=1)
+    password_reset_ip_max_attempts: int = Field(default=20, ge=1)
 
 
 class LoggingConfig(BaseModel):

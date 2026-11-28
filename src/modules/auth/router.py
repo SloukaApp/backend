@@ -8,16 +8,22 @@ from src.core.http_errors import error_responses
 from src.modules.auth.dependencies import (
     AuthServiceDep,
     ConfirmationQueueDep,
+    PasswordResetQueueDep,
     PrincipalDep,
     check_confirmation,
     check_login,
+    check_password_reset,
 )
+from src.modules.auth.dto import PasswordResetInput
 from src.modules.auth.schemas import (
     ConfirmationRequest,
     CredentialsRequest,
     DeliveryResponse,
     DevicesResponse,
     PasswordChangeRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    PasswordResetResponse,
     RefreshRequest,
     RegistrationRequest,
     TokenResponse,
@@ -185,4 +191,33 @@ async def change_password(
 ) -> Response:
     async with uow:
         await service.change_password(principal.user_id, data.current_password, data.new_password)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/password-reset/request",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=PasswordResetResponse,
+    responses=error_responses(status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def request_password_reset(
+    data: PasswordResetRequest, uow: UoWDep, service: AuthServiceDep, queue: PasswordResetQueueDep
+) -> PasswordResetResponse:
+    async with uow:
+        reset_id = await service.request_password_reset(data.email)
+    await queue.enqueue_password_reset(reset_id)
+    return PasswordResetResponse()
+
+
+@router.post(
+    "/password-reset/confirm",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(check_password_reset)],
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED, status.HTTP_422_UNPROCESSABLE_CONTENT),
+)
+async def confirm_password_reset(
+    data: PasswordResetConfirm, uow: UoWDep, service: AuthServiceDep
+) -> Response:
+    async with uow:
+        await service.confirm_password_reset(PasswordResetInput(**data.model_dump()))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
