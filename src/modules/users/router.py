@@ -1,9 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 
 from src.core.dependencies import UoWDep
-from src.core.schemas import ErrorResponse
+from src.core.http_errors import error_responses
 from src.modules.auth.dependencies import get_current_user
 from src.modules.users.dependencies import UsersServiceDep
 from src.modules.users.dto import UpdateProfileInput, UserState
@@ -16,7 +16,7 @@ CurrentUserDep = Annotated[UserState, Depends(get_current_user)]
 @router.get(
     "/me",
     response_model=ProfileResponse,
-    responses={401: {"model": ErrorResponse}},
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED),
 )
 async def read_profile(
     user: CurrentUserDep, service: UsersServiceDep, uow: UoWDep
@@ -29,7 +29,7 @@ async def read_profile(
 @router.patch(
     "/me",
     response_model=ProfileResponse,
-    responses={401: {"model": ErrorResponse}, 422: {"model": ErrorResponse}},
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED, status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def update_profile(
     data: UpdateProfileRequest,
@@ -47,7 +47,7 @@ async def update_profile(
 @router.post(
     "/me/onboarding",
     response_model=ProfileResponse,
-    responses={401: {"model": ErrorResponse}},
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED),
 )
 async def complete_onboarding(
     user: CurrentUserDep, service: UsersServiceDep, uow: UoWDep

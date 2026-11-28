@@ -1,8 +1,8 @@
 # Decks Module Rules
 
 Inherits the root AGENTS.md. Public interface: `DecksService`; DTOs: `dto.py`;
-documented public exceptions: `errors.py`. HTTP mappings belong in `http_errors.py`
-and are assembled in `main.py`, never imported by services or workers.
+documented public exceptions: `errors.py`. HTTP handlers belong in `http_errors.py`
+and are registered in `main.py`, never imported by services or workers.
 
 ## Ownership
 

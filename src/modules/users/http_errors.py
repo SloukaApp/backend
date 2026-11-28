@@ -1,4 +1,7 @@
-from src.core.http_errors import HttpErrorResponse, map_error
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
+
+from src.core.http_errors import ExceptionHandlers, error_response
 from src.modules.users.errors import (
     EmailAlreadyExistsError,
     InvalidCredentialsError,
@@ -7,10 +10,31 @@ from src.modules.users.errors import (
     UserNotFoundError,
 )
 
-ERROR_MAPPINGS = (
-    map_error(InvalidPasswordError, HttpErrorResponse(422, "Invalid password")),
-    map_error(EmailAlreadyExistsError, HttpErrorResponse(409, "Email already registered")),
-    map_error(InvalidCredentialsError, HttpErrorResponse(401, "Invalid credentials")),
-    map_error(UserNotFoundError, HttpErrorResponse(401, "Account unavailable")),
-    map_error(InvalidProfileError, HttpErrorResponse(422, "Invalid reminder settings")),
-)
+
+async def handle_invalid_password(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid password")
+
+
+async def handle_email_already_exists(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_409_CONFLICT, "Email already registered")
+
+
+async def handle_invalid_credentials(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+
+
+async def handle_user_not_found(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_401_UNAUTHORIZED, "Account unavailable")
+
+
+async def handle_invalid_profile(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid reminder settings")
+
+
+EXCEPTION_HANDLERS: ExceptionHandlers = {
+    EmailAlreadyExistsError: handle_email_already_exists,
+    InvalidCredentialsError: handle_invalid_credentials,
+    InvalidPasswordError: handle_invalid_password,
+    InvalidProfileError: handle_invalid_profile,
+    UserNotFoundError: handle_user_not_found,
+}

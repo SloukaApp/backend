@@ -13,11 +13,13 @@ uv run mypy --strict src
 
 Run these commands for application code changes; report failures or commands that could not run. Documentation-only changes require a consistency review. Use only `uv`, never `pip` / `poetry` / `pipenv`; commit generated `uv.lock` changes, never hand-edit it. New dependencies require approval. FastAPI `Depends` is the DI mechanism; no DI containers, sync DB drivers, or alternate ORMs.
 
+For local PostgreSQL tests, reuse the `slouka-test-postgres` container (`127.0.0.1:54032`, database `slouka_test`). Start that container if stopped. Apply migrations to the test database using `DB__DSN` only for the Alembic command. Set `TEST_DATABASE_DSN` for `make test` in the shell or in the local `.env`. The shell value takes precedence. Keep the container between runs.
+
 Stack is fixed: Python 3.14, FastAPI, SQLAlchemy 2 async + asyncpg, Alembic, PostgreSQL 17, Redis, Taskiq + taskiq-redis, httpx, Pydantic v2, pydantic-settings, PyJWT, pwdlib[argon2].
 
 ```text
 src/main.py            # lifespan; explicit router + handler registration
-src/core/              # config, db, redis, uow, errors, http_errors, schemas, logging, dependencies.py
+src/core/              # config, db, redis, uow, errors, http_errors, schemas, logging, middleware/, dependencies.py
 src/modules/<name>/{router,service,dto,domain,errors,http_errors,repository,models,schemas,adapters,dependencies}.py
 src/worker/            # bootstrap.py, broker.py, tasks/
 migrations/
@@ -88,7 +90,7 @@ async with uow:
 | `dto.py` | Pydantic service input/result models. |
 | `domain.py` | Pure business rules; time is an explicit parameter. |
 | `errors.py` | Transport-independent exceptions forming the public service contract. |
-| `http_errors.py` | HTTP mappings for public exceptions, wired by `main.py`. |
+| `http_errors.py` | HTTP handlers for public exceptions, wired by `main.py`. |
 | `repository.py` | Typed async queries with `AsyncSession` as the first argument. |
 | `models.py` | ORM mappings. |
 | `schemas.py` | HTTP request/response models. |
@@ -112,38 +114,11 @@ async with uow:
 ## Error Handling
 
 - Define module errors in `errors.py` as `ApplicationError` subclasses with an `Error` suffix. They are part of the public service contract; document them on service methods. Carry semantic data only, with no HTTP imports, statuses, headers, or response text.
-- Define `ERROR_MAPPINGS` in module `http_errors.py`; assemble them explicitly in `main.py` with `build_application_error_handler(*ERROR_MAPPINGS, ...)`. Static responses and typed translator functions are supported; services and workers never import HTTP mappings.
-- Register the same handler for `ApplicationError` and `Exception`. Matching is exact; duplicates fail at startup, unmapped/unexpected errors return safe 500. Responses use explicit safe text, never `str(exc)`. Preserve FastAPI validation; declare expected HTTP errors using `ErrorResponse` in OpenAPI.
+- Define named HTTP handlers and the `EXCEPTION_HANDLERS` dictionary in the owning module's `http_errors.py`. Register each exception only in its owning module. Combine the dictionaries in `main.py` and pass them to `FastAPI(exception_handlers=...)`. Services and workers never import HTTP handlers. Use `fastapi.status` constants for HTTP statuses in handlers and routers.
+- The HTTP error middleware calls the same handlers for expected exceptions from lower middleware and for unexpected failures. Keep CORS and request-ID middleware outside it so their headers are applied to error responses. Register the internal error handler for `Exception` as the outer server fallback.
+- Return safe public text and the protocol headers required by the error. Do not expose exception messages, submitted values, or raw validation details in responses. Preserve FastAPI request validation and handle `RequestValidationError` as a safe `422` with `ErrorResponse`. Unhandled exceptions get a safe `500`. Declare expected HTTP errors in each operation's OpenAPI responses using `ErrorResponse`.
 - Routers need no error-handling `try/except`. Services catch errors only for recovery or workflow-specific translation; workers apply their own failure/retry policy.
 - Translate known DB violations around repository `flush()` using SQLSTATE and constraint identity. UoW rolls back/closes; it knows no module semantics. Deferred constraints need explicit commit-time translation when introduced; unknown DB failures are not business conflicts.
-
-Example for a future auth operation (add only errors needed by real operations):
-
-```python
-# modules/auth/errors.py
-from src.core.errors import ApplicationError
-
-
-class LoginRateLimitedError(ApplicationError):
-    def __init__(self, retry_after_seconds: int) -> None:
-        self.retry_after_seconds = retry_after_seconds
-        super().__init__()
-
-
-# modules/auth/http_errors.py
-from src.core.http_errors import HttpErrorResponse, map_error
-from src.modules.auth.errors import LoginRateLimitedError
-
-
-def rate_limit_response(error: LoginRateLimitedError) -> HttpErrorResponse:
-    return HttpErrorResponse(
-        429, "Too many requests", {"Retry-After": str(error.retry_after_seconds)}
-    )
-
-
-ERROR_MAPPINGS = (map_error(LoginRateLimitedError, rate_limit_response),)
-# Static alternative: map_error(SomeError, HttpErrorResponse(409, "Conflict"))
-```
 
 ## Boundaries & Safety
 

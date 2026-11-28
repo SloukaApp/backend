@@ -8,7 +8,7 @@ help:
 	@echo "up / stop / down / build / logs / ps / config / test"
 
 test:
-	uv run pytest
+	uv run $(if $(wildcard .env),--env-file .env) pytest
 
 up:
 	$(COMPOSE) up -d --build

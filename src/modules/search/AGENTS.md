@@ -1,8 +1,8 @@
 # Search Module Rules
 
 Inherits the root AGENTS.md. Public interface: `SearchService`; DTOs: `dto.py`;
-documented public exceptions: `errors.py`. HTTP mappings belong in `http_errors.py`
-and are assembled in `main.py`, never imported by services or workers.
+documented public exceptions: `errors.py`. HTTP handlers belong in `http_errors.py`
+and are registered in `main.py`, never imported by services or workers.
 
 ## Ownership & Dependencies
 
@@ -22,7 +22,7 @@ and are assembled in `main.py`, never imported by services or workers.
 - Intersect the operation's dictionary IDs with `VERBUM__DICTIONARY_IDS` in configured order. An empty intersection returns 503 after authorization, without an upstream request.
 - Return `query`, `items`, `suggestions` and `pagination`. Keep suggestions on empty or out-of-range pages, which return 200. Preserve `requested_page`, `upstream_current`, `upstream_total` and `upstream_relation`. Pass Verbum's Total through without treating it as an article count.
 - Stable-sort by configured priority and preserve upstream order within a dictionary. Matches can occur anywhere in article content. Keep separate entries for each headword or homonym and allow the same `source` to recur. Source holds opaque `dictionary_id`, `article_id` and the explicit dictionary name. Do not merge articles or filter by exact headword.
-- Declare 200, 401, 403, FastAPI's 422, 502 and 503 in OpenAPI. The three response schemas and service result DTOs are distinct.
+- Declare 200, 401, 403, safe 422, 500, 502 and 503 in OpenAPI. The three response schemas and service result DTOs are distinct.
 
 ## Parsed Content Invariants
 

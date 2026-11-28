@@ -1,83 +1,91 @@
 import logging
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Coroutine, Mapping
+from http import HTTPStatus
+from typing import cast
 
-from fastapi import Request
+from fastapi import Request, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.utils import is_body_allowed_for_status_code
+from starlette.exceptions import HTTPException
 
-from src.core.errors import ApplicationError, RateLimitExceededError, RateLimitUnavailableError
+from src.core.errors import RateLimitExceededError, RateLimitUnavailableError
+from src.core.schemas import ErrorResponse
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass(frozen=True, slots=True)
-class HttpErrorResponse:
-    status_code: int
-    detail: str
-    headers: Mapping[str, str] | None = None
-
-    def __post_init__(self) -> None:
-        if not 400 <= self.status_code <= 599:
-            raise ValueError("An HTTP error response must have a 4xx or 5xx status")
+type ExceptionHandlers = dict[
+    int | type[Exception], Callable[[Request, Exception], Coroutine[object, object, Response]]
+]
 
 
-@dataclass(frozen=True, slots=True)
-class ErrorMapping:
-    error_type: type[ApplicationError]
-    translate: Callable[[ApplicationError], HttpErrorResponse]
-
-
-def map_error[E: ApplicationError](
-    error_type: type[E],
-    response: HttpErrorResponse | Callable[[E], HttpErrorResponse],
-) -> ErrorMapping:
-    """Adapt a static response or a typed translator to the shared registry."""
-
-    def translate(error: ApplicationError) -> HttpErrorResponse:
-        if not isinstance(error, error_type):
-            raise TypeError("The error does not match the registered mapping")
-        if isinstance(response, HttpErrorResponse):
-            return response
-        return response(error)
-
-    return ErrorMapping(error_type, translate)
-
-
-def build_application_error_handler(
-    *mappings: ErrorMapping,
-) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
-    """Build an application-local registry snapshot with exact exception matching."""
-    registry: dict[type[ApplicationError], ErrorMapping] = {}
-    for mapping in mappings:
-        if mapping.error_type in registry:
-            raise ValueError("Duplicate application error mapping")
-        registry[mapping.error_type] = mapping
-
-    async def handler(request: Request, exc: Exception) -> JSONResponse:
-        if isinstance(exc, ApplicationError):
-            mapping = registry.get(type(exc))
-            if mapping is not None:
-                response = mapping.translate(exc)
-                return JSONResponse(
-                    status_code=response.status_code,
-                    content={"detail": response.detail},
-                    headers=response.headers,
-                )
-
-        # Exception messages and arguments can contain credentials or personal data.
-        logger.error("Unhandled error type: %s.%s", type(exc).__module__, type(exc).__qualname__)
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
-
-    return handler
-
-
-def rate_limit_response(error: RateLimitExceededError) -> HttpErrorResponse:
-    return HttpErrorResponse(
-        429, "Too many requests", {"Retry-After": str(error.retry_after_seconds)}
+def error_response(
+    status_code: int, detail: str, headers: Mapping[str, str] | None = None
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content=ErrorResponse(detail=detail).model_dump(),
+        headers=headers,
     )
 
 
-ERROR_MAPPINGS = (
-    map_error(RateLimitExceededError, rate_limit_response),
-    map_error(RateLimitUnavailableError, HttpErrorResponse(503, "Rate limit service unavailable")),
-)
+def error_responses(*status_codes: int) -> dict[int | str, dict[str, object]]:
+    responses: dict[int | str, dict[str, object]] = {
+        code: {"model": ErrorResponse} for code in status_codes
+    }
+    if status.HTTP_429_TOO_MANY_REQUESTS in responses:
+        responses[status.HTTP_429_TOO_MANY_REQUESTS]["headers"] = {
+            "Retry-After": {
+                "description": "Seconds until the client can retry",
+                "schema": {"type": "integer", "minimum": 1},
+            }
+        }
+    return responses
+
+
+async def handle_request_validation(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_422_UNPROCESSABLE_CONTENT, "Invalid request")
+
+
+async def handle_http_exception(_request: Request, exc: Exception) -> Response:
+    error = cast(HTTPException, exc)
+    headers = {
+        name: value
+        for name, value in (error.headers or {}).items()
+        if name.lower() in {"allow", "retry-after", "www-authenticate"}
+    }
+    if not is_body_allowed_for_status_code(error.status_code):
+        return Response(status_code=error.status_code, headers=headers)
+    try:
+        detail = HTTPStatus(error.status_code).phrase
+    except ValueError:
+        detail = "Request failed"
+    return error_response(error.status_code, detail, headers)
+
+
+async def handle_internal_error(_request: Request, exc: Exception) -> JSONResponse:
+    # Exception messages and arguments can contain credentials or personal data.
+    logger.error("Unhandled error type: %s.%s", type(exc).__module__, type(exc).__qualname__)
+    return error_response(status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal server error")
+
+
+async def handle_rate_limit_exceeded(_request: Request, exc: Exception) -> JSONResponse:
+    error = cast(RateLimitExceededError, exc)
+    return error_response(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        "Too many requests",
+        {"Retry-After": str(error.retry_after_seconds)},
+    )
+
+
+async def handle_rate_limit_unavailable(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_503_SERVICE_UNAVAILABLE, "Rate limit service unavailable")
+
+
+EXCEPTION_HANDLERS: ExceptionHandlers = {
+    Exception: handle_internal_error,
+    HTTPException: handle_http_exception,
+    RequestValidationError: handle_request_validation,
+    RateLimitExceededError: handle_rate_limit_exceeded,
+    RateLimitUnavailableError: handle_rate_limit_unavailable,
+}

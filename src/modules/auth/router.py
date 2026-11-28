@@ -1,10 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from src.core.dependencies import UoWDep
-from src.core.schemas import ErrorResponse
+from src.core.http_errors import error_responses
 from src.modules.auth.dependencies import (
     AuthServiceDep,
     PrincipalDep,
@@ -29,8 +29,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post(
     "/register",
     response_model=DeliveryResponse,
-    status_code=201,
-    responses={code: {"model": ErrorResponse} for code in (409, 422, 503)},
+    status_code=status.HTTP_201_CREATED,
+    responses=error_responses(
+        status.HTTP_409_CONFLICT,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+    ),
 )
 async def register(
     data: RegistrationRequest, uow: UoWDep, service: AuthServiceDep
@@ -44,7 +48,12 @@ async def register(
 @router.post(
     "/confirmations/resend",
     response_model=DeliveryResponse,
-    responses={code: {"model": ErrorResponse} for code in (401, 409, 422, 503)},
+    responses=error_responses(
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_409_CONFLICT,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+    ),
 )
 async def resend(
     data: CredentialsRequest, uow: UoWDep, service: AuthServiceDep
@@ -59,7 +68,13 @@ async def resend(
     "/confirm-email",
     dependencies=[Depends(check_confirmation)],
     response_model=TokenResponse,
-    responses={code: {"model": ErrorResponse} for code in (401, 409, 422, 429, 503)},
+    responses=error_responses(
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_409_CONFLICT,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+    ),
 )
 async def confirm(data: ConfirmationRequest, uow: UoWDep, service: AuthServiceDep) -> TokenResponse:
     async with uow:
@@ -71,7 +86,14 @@ async def confirm(data: ConfirmationRequest, uow: UoWDep, service: AuthServiceDe
     "/login",
     dependencies=[Depends(check_login)],
     response_model=TokenResponse,
-    responses={code: {"model": ErrorResponse} for code in (401, 403, 409, 422, 429, 503)},
+    responses=error_responses(
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_403_FORBIDDEN,
+        status.HTTP_409_CONFLICT,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+    ),
 )
 async def login(data: CredentialsRequest, uow: UoWDep, service: AuthServiceDep) -> TokenResponse:
     async with uow:
@@ -82,7 +104,11 @@ async def login(data: CredentialsRequest, uow: UoWDep, service: AuthServiceDep) 
 @router.post(
     "/refresh",
     response_model=TokenResponse,
-    responses={code: {"model": ErrorResponse} for code in (401, 409, 422)},
+    responses=error_responses(
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_409_CONFLICT,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+    ),
 )
 async def refresh(data: RefreshRequest, uow: UoWDep, service: AuthServiceDep) -> TokenResponse:
     async with uow:
@@ -93,7 +119,7 @@ async def refresh(data: RefreshRequest, uow: UoWDep, service: AuthServiceDep) ->
 @router.get(
     "/devices",
     response_model=DevicesResponse,
-    responses={code: {"model": ErrorResponse} for code in (401, 422)},
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED, status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def devices(
     principal: PrincipalDep,
@@ -109,49 +135,53 @@ async def devices(
 
 @router.delete(
     "/devices/{device_id}",
-    status_code=204,
-    responses={code: {"model": ErrorResponse} for code in (401, 404, 422)},
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=error_responses(
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_404_NOT_FOUND,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+    ),
 )
 async def revoke_device(
     device_id: UUID, principal: PrincipalDep, uow: UoWDep, service: AuthServiceDep
 ) -> Response:
     async with uow:
         await service.revoke_device(principal.user_id, device_id)
-    return Response(status_code=204)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
     "/logout",
-    status_code=204,
-    responses={code: {"model": ErrorResponse} for code in (401, 404, 422)},
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED, status.HTTP_404_NOT_FOUND),
 )
 async def logout(principal: PrincipalDep, uow: UoWDep, service: AuthServiceDep) -> Response:
     async with uow:
         await service.revoke_device(principal.user_id, principal.device_id)
-    return Response(status_code=204)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
     "/logout-everywhere",
-    status_code=204,
-    responses={code: {"model": ErrorResponse} for code in (401,)},
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED),
 )
 async def logout_everywhere(
     principal: PrincipalDep, uow: UoWDep, service: AuthServiceDep
 ) -> Response:
     async with uow:
         await service.logout_everywhere(principal.user_id)
-    return Response(status_code=204)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
     "/password",
-    status_code=204,
-    responses={code: {"model": ErrorResponse} for code in (401, 422)},
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=error_responses(status.HTTP_401_UNAUTHORIZED, status.HTTP_422_UNPROCESSABLE_CONTENT),
 )
 async def change_password(
     data: PasswordChangeRequest, principal: PrincipalDep, uow: UoWDep, service: AuthServiceDep
 ) -> Response:
     async with uow:
         await service.change_password(principal.user_id, data.current_password, data.new_password)
-    return Response(status_code=204)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

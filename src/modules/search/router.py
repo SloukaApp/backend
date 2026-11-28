@@ -1,8 +1,8 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 
-from src.core.schemas import ErrorResponse
+from src.core.http_errors import error_responses
 from src.modules.auth.dependencies import get_confirmed_user
 from src.modules.search.dependencies import SearchServiceDep
 from src.modules.search.dto import SearchInput
@@ -16,7 +16,13 @@ from src.modules.search.schemas import (
 router = APIRouter(
     tags=["search"],
     dependencies=[Depends(get_confirmed_user)],
-    responses={code: {"model": ErrorResponse} for code in (401, 403, 502, 503)},
+    responses=error_responses(
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_403_FORBIDDEN,
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        status.HTTP_502_BAD_GATEWAY,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+    ),
 )
 
 

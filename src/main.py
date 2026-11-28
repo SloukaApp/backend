@@ -2,24 +2,24 @@ from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 
 import httpx
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from src.core import http_errors as core_http
 from src.core.config import API_V1_PREFIX, get_settings
 from src.core.db import build_engine, build_session_factory
-from src.core.errors import ApplicationError
-from src.core.http_errors import ERROR_MAPPINGS as CORE_ERROR_MAPPINGS
-from src.core.http_errors import build_application_error_handler
-from src.core.logging import RequestIdMiddleware, setup_logging
+from src.core.logging import setup_logging
+from src.core.middleware.error_handling import ErrorHandlingMiddleware
+from src.core.middleware.request_id import RequestIdMiddleware
 from src.core.redis import build_redis
+from src.modules.auth import http_errors as auth_http
 from src.modules.auth.adapters import SmtpConfirmationMailer
-from src.modules.auth.http_errors import ERROR_MAPPINGS as AUTH_ERROR_MAPPINGS
 from src.modules.auth.router import router as auth_router
-from src.modules.search.http_errors import ERROR_MAPPINGS as SEARCH_ERROR_MAPPINGS
+from src.modules.search import http_errors as search_http
 from src.modules.search.router import router as search_router
 from src.modules.search.verbum import VerbumClient
-from src.modules.users.http_errors import ERROR_MAPPINGS as USERS_ERROR_MAPPINGS
+from src.modules.users import http_errors as users_http
 from src.modules.users.router import router as users_router
 
 
@@ -62,8 +62,17 @@ def create_app() -> FastAPI:
         openapi_url=f"{API_V1_PREFIX}/openapi.json",
         docs_url=f"{API_V1_PREFIX}/docs",
         redoc_url=None,
+        exception_handlers={
+            **core_http.EXCEPTION_HANDLERS,
+            **auth_http.EXCEPTION_HANDLERS,
+            **search_http.EXCEPTION_HANDLERS,
+            **users_http.EXCEPTION_HANDLERS,
+        },
     )
 
+    # The last middleware added runs first on incoming requests.
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.app.trusted_proxies)
+    app.add_middleware(ErrorHandlingMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.app.allowed_origins,
@@ -72,14 +81,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(RequestIdMiddleware)
-    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.app.trusted_proxies)
-    error_handler = build_application_error_handler(
-        *CORE_ERROR_MAPPINGS, *USERS_ERROR_MAPPINGS, *AUTH_ERROR_MAPPINGS, *SEARCH_ERROR_MAPPINGS
-    )
-    app.add_exception_handler(ApplicationError, error_handler)
-    app.add_exception_handler(Exception, error_handler)
 
-    api_router = APIRouter(prefix=API_V1_PREFIX)
+    api_router = APIRouter(
+        prefix=API_V1_PREFIX,
+        responses=core_http.error_responses(status.HTTP_500_INTERNAL_SERVER_ERROR),
+    )
     api_router.include_router(auth_router)
     api_router.include_router(users_router)
     api_router.include_router(search_router)

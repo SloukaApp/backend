@@ -1,4 +1,7 @@
-from src.core.http_errors import HttpErrorResponse, map_error
+from fastapi import Request, status
+from fastapi.responses import JSONResponse
+
+from src.core.http_errors import ExceptionHandlers, error_response
 from src.modules.auth.errors import (
     AuthorizationConflictError,
     ConfirmationConflictError,
@@ -11,30 +14,61 @@ from src.modules.auth.errors import (
     MailDeliveryError,
 )
 
-ERROR_MAPPINGS = (
-    map_error(
-        AuthorizationConflictError,
-        HttpErrorResponse(409, "Authorization conflict; retry the operation"),
-    ),
-    map_error(
-        InvalidAccessError,
-        HttpErrorResponse(401, "Invalid or missing access token", {"WWW-Authenticate": "Bearer"}),
-    ),
-    map_error(InvalidRefreshError, HttpErrorResponse(401, "Invalid refresh token")),
-    map_error(InvalidConfirmationError, HttpErrorResponse(401, "Invalid email confirmation")),
-    map_error(EmailUnconfirmedError, HttpErrorResponse(403, "Email confirmation required")),
-    map_error(DeviceLimitError, HttpErrorResponse(409, "Active device limit reached")),
-    map_error(DeviceNotFoundError, HttpErrorResponse(404, "Device not found")),
-    map_error(
-        ConfirmationConflictError,
-        HttpErrorResponse(409, "Confirmation cannot be resent yet or email is already confirmed"),
-    ),
-    map_error(
-        MailDeliveryError,
-        HttpErrorResponse(
-            503,
-            "Confirmation saved but email delivery failed; "
-            "request a new confirmation after the cooldown",
-        ),
-    ),
-)
+
+async def handle_authorization_conflict(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_409_CONFLICT, "Authorization conflict; retry the operation")
+
+
+async def handle_invalid_access(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(
+        status.HTTP_401_UNAUTHORIZED,
+        "Invalid or missing access token",
+        {"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def handle_invalid_refresh(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_401_UNAUTHORIZED, "Invalid refresh token")
+
+
+async def handle_invalid_confirmation(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_401_UNAUTHORIZED, "Invalid email confirmation")
+
+
+async def handle_email_unconfirmed(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_403_FORBIDDEN, "Email confirmation required")
+
+
+async def handle_device_limit(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_409_CONFLICT, "Active device limit reached")
+
+
+async def handle_device_not_found(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(status.HTTP_404_NOT_FOUND, "Device not found")
+
+
+async def handle_confirmation_conflict(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(
+        status.HTTP_409_CONFLICT, "Confirmation cannot be resent yet or email is already confirmed"
+    )
+
+
+async def handle_mail_delivery(_request: Request, _exc: Exception) -> JSONResponse:
+    return error_response(
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "Confirmation saved but email delivery failed; "
+        "request a new confirmation after the cooldown",
+    )
+
+
+EXCEPTION_HANDLERS: ExceptionHandlers = {
+    AuthorizationConflictError: handle_authorization_conflict,
+    ConfirmationConflictError: handle_confirmation_conflict,
+    DeviceLimitError: handle_device_limit,
+    DeviceNotFoundError: handle_device_not_found,
+    EmailUnconfirmedError: handle_email_unconfirmed,
+    InvalidAccessError: handle_invalid_access,
+    InvalidConfirmationError: handle_invalid_confirmation,
+    InvalidRefreshError: handle_invalid_refresh,
+    MailDeliveryError: handle_mail_delivery,
+}

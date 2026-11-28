@@ -235,10 +235,10 @@ async def test_validation_auth_and_openapi(dictionary_api: DictionaryAPI) -> Non
     ):
         path = f"/api/v1/{route}"
         responses = spec["paths"][path]["get"]["responses"]
-        assert set(responses) == {"200", "401", "403", "422", "502", "503"}
+        assert set(responses) == {"200", "401", "403", "422", "500", "502", "503"}
         assert responses["200"]["content"]["application/json"]["schema"]["$ref"].endswith(model)
         assert responses["422"]["content"]["application/json"]["schema"]["$ref"].endswith(
-            "/HTTPValidationError"
+            "/ErrorResponse"
         )
 
         assert (await api.get(path, headers={"Authorization": ""})).status_code == 401
@@ -246,6 +246,8 @@ async def test_validation_auth_and_openapi(dictionary_api: DictionaryAPI) -> Non
         assert (await api.get(path, params={"query": "x"})).status_code == 403
         account.email_confirmed = True
         for params in ({}, {"query": "\tx"}, {"query": " "}, {"query": "x", "page": 0}):
-            assert (await api.get(path, params=params)).status_code == 422
+            rejected = await api.get(path, params=params)
+            assert rejected.status_code == 422
+            assert rejected.json() == {"detail": "Invalid request"}
     assert not redis.cached
     assert not upstream.calls
