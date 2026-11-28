@@ -74,6 +74,8 @@ jobs:
           uv run --no-sync alembic check
 
       - name: Pytest
+        env:
+          TEST_DATABASE_DSN: postgresql+asyncpg://slouka_ci:ci-only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/slouka_migrations
         shell: bash
         run: |
           status=0
