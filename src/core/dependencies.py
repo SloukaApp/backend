@@ -5,6 +5,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.core.config import Settings, get_settings
+from src.core.errors import RateLimitUnavailableError
 from src.core.uow import UnitOfWork
 
 
@@ -16,6 +17,12 @@ def get_uow(request: Request) -> UnitOfWork:
 def get_redis(request: Request) -> Redis:
     redis: Redis = request.app.state.redis
     return redis
+
+
+def get_client_ip(request: Request) -> str:
+    if request.client is None:
+        raise RateLimitUnavailableError()
+    return request.client.host
 
 
 UoWDep = Annotated[UnitOfWork, Depends(get_uow)]

@@ -1,4 +1,6 @@
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -8,7 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.types import ASGIApp
 
 from src import main
-from src.core.config import AppConfig, LoggingConfig, Settings
+from src.core.config import AppConfig, LoggingConfig, RedisConfig, Settings
 from src.core.dependencies import get_uow
 from src.core.errors import ApplicationError, RateLimitExceededError, RateLimitUnavailableError
 from src.modules.auth.dependencies import get_auth_service, get_principal
@@ -43,10 +45,15 @@ class FailingMiddleware(BaseHTTPMiddleware):
 
 @pytest.fixture
 async def api(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[httpx.AsyncClient]:
-    settings = Settings.model_construct(app=AppConfig(), logging=LoggingConfig())
+    settings = Settings.model_construct(
+        app=AppConfig(),
+        logging=LoggingConfig(),
+        redis=RedisConfig.model_validate({"dsn": "redis://localhost:6379"}),
+    )
     monkeypatch.setattr(main, "get_settings", lambda: settings)
     monkeypatch.setattr(main, "ProxyHeadersMiddleware", FailingMiddleware)
     app = main.create_app()
+    app.state.redis = SimpleNamespace(eval=AsyncMock(return_value=0))
 
     for dependency in (get_uow, get_auth_service, get_principal):
         app.dependency_overrides[dependency] = lambda: None

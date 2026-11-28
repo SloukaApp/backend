@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from os import getenv
 from secrets import token_urlsafe
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid7
 
 import httpx
@@ -50,6 +51,7 @@ async def password_api(
         app.router.lifespan_context(app),
         httpx.AsyncClient(transport=transport, base_url="http://testserver/api/v1/auth/") as client,
     ):
+        monkeypatch.setattr(app.state.redis, "eval", AsyncMock(return_value=0))
         sessions = app.state.session_factory
         uow = UnitOfWork(sessions)
         users = UsersService(uow)

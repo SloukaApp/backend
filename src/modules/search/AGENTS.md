@@ -19,10 +19,11 @@ and are registered in `main.py`, never imported by services or workers.
 | `GET /api/v1/synonyms` | `klyshka` | `synonyms` (text) |
 
 - All operations require a Bearer token and confirmed account. Require `query`, reject ASCII controls, normalize with strip/lower and require 1–200 normalized characters. Accept `page` ≥ 1, default 1, and forward it unchanged.
+- The API middleware checks an additional IP budget for `GET /api/v1/search` alongside the shared API IP budget. The route defaults to 10 requests per minute per IP and counts cache hits.
 - Intersect the operation's dictionary IDs with `VERBUM__DICTIONARY_IDS` in configured order. An empty intersection returns 503 after authorization, without an upstream request.
 - Return `query`, `items`, `suggestions` and `pagination`. Keep suggestions on empty or out-of-range pages, which return 200. Preserve `requested_page`, `upstream_current`, `upstream_total` and `upstream_relation`. Pass Verbum's Total through without treating it as an article count.
 - Stable-sort by configured priority and preserve upstream order within a dictionary. Matches can occur anywhere in article content. Keep separate entries for each headword or homonym and allow the same `source` to recur. Source holds opaque `dictionary_id`, `article_id` and the explicit dictionary name. Do not merge articles or filter by exact headword.
-- Declare 200, 401, 403, safe 422, 500, 502 and 503 in OpenAPI. The three response schemas and service result DTOs are distinct.
+- Declare 200, 401, 403, safe 422, 429 with Retry-After, 500, 502 and 503 in OpenAPI. The API router supplies the common rate-limit responses. The three response schemas and service result DTOs are distinct.
 
 ## Parsed Content Invariants
 

@@ -1,6 +1,7 @@
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 from uuid import uuid7
 
 import httpx
@@ -37,6 +38,7 @@ class RedisDouble:
     def __init__(self) -> None:
         self.cached: dict[str, str] = {}
         self.writes = 0
+        self.eval = AsyncMock(return_value=0)
 
     async def get(self, key: str) -> str | None:
         return self.cached.get(key)
@@ -207,6 +209,37 @@ async def test_invalid_cached_result_is_replaced(dictionary_api: DictionaryAPI) 
     assert len(upstream.calls) == 2
 
 
+async def test_search_checks_route_ip_budget_on_cache_hits(dictionary_api: DictionaryAPI) -> None:
+    api, _, redis, upstream, _ = dictionary_api
+    redis.eval.side_effect = [0, 0, 7, 0]
+    params = {"query": "хутка"}
+
+    for _ in range(2):
+        assert (await api.get("/api/v1/search", params=params)).status_code == 200
+    blocked = await api.get("/api/v1/search", params=params)
+    assert blocked.status_code == 429
+    assert blocked.headers["Retry-After"] == "7"
+    assert len(upstream.calls) == 1
+    assert (await api.get("/api/v1/translate", params=params)).status_code == 200
+
+    prefix = "slouka:rate_limit:{rate_limit}:"
+    search_budgets = (
+        2,
+        f"{prefix}api:ip:127.0.0.1",
+        f"{prefix}search:ip:127.0.0.1",
+        60,
+        60,
+        60,
+        10,
+    )
+    assert [call.args[1:] for call in redis.eval.await_args_list] == [
+        search_budgets,
+        search_budgets,
+        search_budgets,
+        (1, f"{prefix}api:ip:127.0.0.1", 60, 60),
+    ]
+
+
 async def test_disabled_operation_skips_upstream(dictionary_api: DictionaryAPI) -> None:
     api, settings, redis, upstream, _ = dictionary_api
     settings.verbum = VerbumConfig(dictionary_ids=("tsbm", "klyshka"))
@@ -235,7 +268,7 @@ async def test_validation_auth_and_openapi(dictionary_api: DictionaryAPI) -> Non
     ):
         path = f"/api/v1/{route}"
         responses = spec["paths"][path]["get"]["responses"]
-        assert set(responses) == {"200", "401", "403", "422", "500", "502", "503"}
+        assert set(responses) == {"200", "401", "403", "422", "429", "500", "502", "503"}
         assert responses["200"]["content"]["application/json"]["schema"]["$ref"].endswith(model)
         assert responses["422"]["content"]["application/json"]["schema"]["$ref"].endswith(
             "/ErrorResponse"

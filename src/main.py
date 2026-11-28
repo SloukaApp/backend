@@ -11,6 +11,7 @@ from src.core.config import API_V1_PREFIX, get_settings
 from src.core.db import build_engine, build_session_factory
 from src.core.logging import setup_logging
 from src.core.middleware.error_handling import ErrorHandlingMiddleware
+from src.core.middleware.rate_limit import RateLimitMiddleware
 from src.core.middleware.request_id import RequestIdMiddleware
 from src.core.redis import build_redis
 from src.modules.auth import http_errors as auth_http
@@ -71,6 +72,9 @@ def create_app() -> FastAPI:
     )
 
     # The last middleware added runs first on incoming requests.
+    app.add_middleware(
+        RateLimitMiddleware, config=settings.rate_limit, key_prefix=settings.redis.key_prefix
+    )
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=settings.app.trusted_proxies)
     app.add_middleware(ErrorHandlingMiddleware)
     app.add_middleware(
@@ -79,12 +83,17 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["Retry-After"],
     )
     app.add_middleware(RequestIdMiddleware)
 
     api_router = APIRouter(
         prefix=API_V1_PREFIX,
-        responses=core_http.error_responses(status.HTTP_500_INTERNAL_SERVER_ERROR),
+        responses=core_http.error_responses(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+        ),
     )
     api_router.include_router(auth_router)
     api_router.include_router(users_router)
